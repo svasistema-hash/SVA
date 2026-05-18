@@ -1,3 +1,19 @@
+// ⚠️ SCHEMA DESINCRONIZADO (en proceso de migración 3.5)
+// Las definiciones de CREATE TABLE en este archivo NO reflejan
+// el schema real de la base de datos. La DB de producción/dev
+// ya tiene:
+//   - clientes.ingresos como TEXT (era REAL)
+//   - clientes.dpi_hash, nit_hash, conyuge_dpi_hash con índices
+//   - clientes.dpi/nit/conyuge_dpi/domicilio/ingresos en
+//     ciphertext base64 (AES-256-GCM)
+//   - fiadores.dpi_hash con índice
+//   - representantes.dpi en ciphertext
+//   - contratos.datos_cliente y datos_garantia en ciphertext
+// Schema sincronizado en commit del paso 3.5.
+// NO BORRAR lexdocs.db y volver a correr seed.js hasta que
+// db.js Y seed.js estén actualizados, o perderás los datos
+// encriptados.
+
 const Database = require('better-sqlite3');
 const { DB_PATH } = require('./config');
 
