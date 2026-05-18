@@ -1,0 +1,82 @@
+:root {
+  /* Base */
+  --black:        #0d0d0d;
+  --white:        #ffffff;
+
+  /* Sidebar y elementos oscuros */
+  --surface-900:  #111318;
+  --surface-800:  #181c24;
+  --surface-700:  #1f242f;
+  --surface-600:  #272d3a;
+
+  /* Fondos de la app */
+  --bg-app:       #f2f1ed;
+  --bg-card:      #ffffff;
+  --bg-subtle:    #f8f7f4;
+  --bg-input:     #fafaf8;
+
+  /* Bordes */
+  --border-light: #e8e6e0;
+  --border-mid:   #d4d0c8;
+  --border-dark:  #b8b4aa;
+
+  /* Texto */
+  --text-primary:   #111318;
+  --text-secondary: #4a4a52;
+  --text-tertiary:  #8a8a94;
+  --text-disabled:  #c0bfbc;
+
+  /* Acento dorado — usar con moderación */
+  --gold:         #b8923a;
+  --gold-light:   #c8a84e;
+  --gold-pale:    #f7f2e8;
+  --gold-border:  rgba(184,146,58,0.3);
+
+  /* Estados */
+  --success:      #2d6e4e;
+  --success-bg:   #eef6f1;
+  --success-border:#c0ddd0;
+
+  --warning:      #8a6020;
+  --warning-bg:   #fdf6e8;
+  --warning-border:#e8d4a0;
+
+  --danger:       #8a2020;
+  --danger-bg:    #fdf0f0;
+  --danger-border:#e8c0c0;
+
+  --info:         #1a3a6e;
+  --info-bg:      #f0f4fb;
+  --info-border:  #c0d0e8;
+
+  /* Sombras */
+  --shadow-sm:    0 1px 3px rgba(0,0,0,0.06);
+  --shadow-md:    0 4px 12px rgba(0,0,0,0.08);
+  --shadow-lg:    0 8px 24px rgba(0,0,0,0.10);
+
+  /* Bordes redondeados */
+  --radius-sm:    4px;
+  --radius-md:    6px;
+  --radius-lg:    10px;
+
+  /* Transiciones */
+  --transition:   all 0.18s ease;
+
+  /* Aliases para compat con código existente */
+  --bg:           var(--bg-app);
+  --surface:      var(--bg-card);
+  --border:       var(--border-light);
+  --border-strong:var(--border-mid);
+  --sidebar:      var(--surface-900);
+  --sidebar-soft: var(--surface-800);
+  --sidebar-text: rgba(255,255,255,0.45);
+  --sidebar-text-dim: rgba(255,255,255,0.25);
+  --text:         var(--text-primary);
+  --text-soft:    var(--text-secondary);
+  --text-dim:     var(--text-tertiary);
+  --gold-soft:    var(--gold-pale);
+  --paper:        #ffffff;
+  --paper-edge:   var(--border-light);
+  --shadow:       var(--shadow-sm);
+  --radius:       var(--radius-md);
+}

@@ -1,0 +1,30 @@
+# Auto-detect text vs binary, normalizar line endings a LF en repo
+* text=auto eol=lf
+
+# Forzar LF en archivos donde importa
+*.js   text eol=lf
+*.jsx  text eol=lf
+*.ts   text eol=lf
+*.tsx  text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+*.css  text eol=lf
+*.html text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.sh   text eol=lf
+
+# Binarios explícitos (no tocar)
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.pdf  binary
+*.ico  binary
+*.woff  binary
+*.woff2 binary
+*.ttf  binary
+*.eot  binary
+*.db   binary
+*.db-shm binary
+*.db-wal binary

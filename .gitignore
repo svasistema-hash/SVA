@@ -1,0 +1,28 @@
+# Secretos y entornos
+.env
+.env.local
+
+# Bases de datos y backups
+*.db
+*.db-shm
+*.db-wal
+*.db.backup-*
+*.sql
+lexdocs.db.pre-encryption-*
+
+# Artefactos generados
+/uploads
+/pdfs
+/screenshots
+node_modules
+dist
+dist-ssr
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# OS / local
+*.local
