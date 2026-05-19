@@ -1,14 +1,18 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useNavigate, useOutletContext } from 'react-router-dom';
+import { useNavigate, useOutletContext, useParams } from 'react-router-dom';
 import { AlertCircle, ChevronDown, ChevronRight } from 'lucide-react';
 
 import Topbar from '../../components/Topbar';
 import Breadcrumb from '../../components/Breadcrumb';
 import { tenantBreadcrumb } from '../../utils/breadcrumb';
 import { clienteJuridicoSchema } from '../../schemas/clienteJuridico';
-import { createClienteJuridico } from '../../api/clientesJuridicos';
+import {
+  createClienteJuridico,
+  updateClienteJuridico,
+  getClienteJuridico,
+} from '../../api/clientesJuridicos';
 
 const TIPOS_SOCIEDAD = ['S.A.','S.R.L.','Sociedad Civil','E.M.I.','Cooperativa','Asociación/Fundación','Otra'];
 const CARGOS_REP   = ['Administrador Único','Presidente','Gerente General','Representante Legal designado','Apoderado'];
@@ -54,15 +58,30 @@ function Field({ label, required, error, hint, children }) {
   );
 }
 
+// Mapea null → '' para que react-hook-form no renderice "null" en inputs.
+function toFormDefaults(data) {
+  if (!data) return {};
+  const out = {};
+  for (const k of Object.keys(data)) {
+    out[k] = data[k] === null || data[k] === undefined ? '' : data[k];
+  }
+  return out;
+}
+
 export default function ClienteJuridicoNuevo() {
   const { inst } = useOutletContext() || {};
   const nav = useNavigate();
+  const { id } = useParams();
+  const isEdit = Boolean(id);
+
   const [serverError, setServerError] = useState(null);
-  const [authConsent, setAuthConsent] = useState(false);
+  // En modo edición no requerimos re-aceptar autorización (asumimos ya consentida al crear).
+  const [authConsent, setAuthConsent] = useState(isEdit);
   const [fiscalOpen, setFiscalOpen] = useState(false);
+  const [loadingExisting, setLoadingExisting] = useState(isEdit);
 
   const {
-    register, handleSubmit, watch, setError,
+    register, handleSubmit, watch, setError, reset,
     formState: { errors, isSubmitting },
   } = useForm({
     resolver: zodResolver(clienteJuridicoSchema),
@@ -72,6 +91,16 @@ export default function ClienteJuridicoNuevo() {
       rep_cargo: '',
     },
   });
+
+  // En modo edición: cargar datos existentes y pre-llenar.
+  useEffect(() => {
+    if (!isEdit) return;
+    setLoadingExisting(true);
+    getClienteJuridico(id)
+      .then((c) => reset(toFormDefaults(c)))
+      .catch((e) => setServerError(e.response?.data?.error || e.message))
+      .finally(() => setLoadingExisting(false));
+  }, [id, isEdit, reset]);
 
   const tipoSociedad = watch('tipo_sociedad');
   const repCargo = watch('rep_cargo');
@@ -85,31 +114,33 @@ export default function ClienteJuridicoNuevo() {
   const onSubmit = async (data) => {
     setServerError(null);
     try {
-      const created = await createClienteJuridico(data);
-      nav(`/instituciones/${inst.slug}/clientes/juridicos/${created.id}`);
+      const result = isEdit
+        ? await updateClienteJuridico(id, data)
+        : await createClienteJuridico(data);
+      const newId = result?.id || id;
+      nav(`/instituciones/${inst.slug}/clientes/juridicos/${newId}`);
     } catch (e) {
       const resp = e?.response?.data;
-      // Mapear issues del backend a errores por campo
       if (resp?.issues?.length) {
         for (const i of resp.issues) {
           if (i.path) setError(i.path, { type: 'server', message: i.message });
         }
         setServerError(resp.error || 'La validación del servidor falló. Revisá los campos.');
       } else {
-        setServerError(resp?.error || e.message || 'Error desconocido al crear el cliente.');
+        setServerError(resp?.error || e.message || `Error al ${isEdit ? 'actualizar' : 'crear'} el cliente.`);
       }
     }
   };
 
-  if (!inst) {
+  if (!inst || loadingExisting) {
     return (<><Topbar title="Cargando…" /><div className="app-content"><div className="empty"><span className="spinner" /></div></div></>);
   }
 
   return (
     <>
       <Topbar
-        title="Nuevo cliente jurídico"
-        crumbs={<Breadcrumb segments={tenantBreadcrumb(inst, 'Clientes', 'Jurídicos', 'Nuevo')} />}
+        title={isEdit ? `Editar ${watch('nombre') || 'cliente jurídico'}` : 'Nuevo cliente jurídico'}
+        crumbs={<Breadcrumb segments={tenantBreadcrumb(inst, 'Clientes', 'Jurídicos', isEdit ? (watch('nombre') || 'Editar') : 'Nuevo')} />}
         actions={
           <>
             <button
@@ -126,7 +157,7 @@ export default function ClienteJuridicoNuevo() {
               className="btn btn-gold"
               disabled={isSubmitting || !authConsent}
             >
-              {isSubmitting ? <span className="spinner" /> : 'Guardar'}
+              {isSubmitting ? <span className="spinner" /> : (isEdit ? 'Guardar cambios' : 'Guardar')}
             </button>
           </>
         }
@@ -376,45 +407,49 @@ export default function ClienteJuridicoNuevo() {
               )}
             </div>
 
-            {/* ─── Sección 6: Autorizaciones ────────────────────── */}
-            <div style={sectionStyle}>
-              <h3 style={sectionHeaderStyle}>Autorizaciones</h3>
-              <label
-                style={{
-                  display: 'flex', alignItems: 'flex-start', gap: 10,
-                  marginTop: 12, padding: '12px 14px',
-                  border: '0.5px solid var(--border-light)',
-                  borderRadius: 6,
-                  background: authConsent ? 'var(--success-bg)' : 'var(--bg-subtle)',
-                  cursor: 'pointer',
-                  fontSize: 12.5,
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={authConsent}
-                  onChange={(e) => setAuthConsent(e.target.checked)}
-                  style={{ marginTop: 2 }}
-                />
-                <span>
-                  Autorizo el tratamiento de los datos de la sociedad conforme a la legislación
-                  aplicable.{' '}
-                  <strong style={{ color: 'var(--danger)' }}>*</strong>
-                </span>
-              </label>
-              {!authConsent && (
-                <div className="help" style={{ marginTop: 6 }}>
-                  La autorización es obligatoria para poder guardar el cliente.
-                </div>
-              )}
-            </div>
+            {/* ─── Sección 6: Autorizaciones (solo en creación) ─── */}
+            {!isEdit && (
+              <div style={sectionStyle}>
+                <h3 style={sectionHeaderStyle}>Autorizaciones</h3>
+                <label
+                  style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 10,
+                    marginTop: 12, padding: '12px 14px',
+                    border: '0.5px solid var(--border-light)',
+                    borderRadius: 6,
+                    background: authConsent ? 'var(--success-bg)' : 'var(--bg-subtle)',
+                    cursor: 'pointer',
+                    fontSize: 12.5,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={authConsent}
+                    onChange={(e) => setAuthConsent(e.target.checked)}
+                    style={{ marginTop: 2 }}
+                  />
+                  <span>
+                    Autorizo el tratamiento de los datos de la sociedad conforme a la legislación
+                    aplicable.{' '}
+                    <strong style={{ color: 'var(--danger)' }}>*</strong>
+                  </span>
+                </label>
+                {!authConsent && (
+                  <div className="help" style={{ marginTop: 6 }}>
+                    La autorización es obligatoria para poder guardar el cliente.
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
             <button
               type="button"
               className="btn"
-              onClick={() => nav(`/instituciones/${inst.slug}/clientes/juridicos`)}
+              onClick={() => nav(isEdit
+                ? `/instituciones/${inst.slug}/clientes/juridicos/${id}`
+                : `/instituciones/${inst.slug}/clientes/juridicos`)}
               disabled={isSubmitting}
             >
               Cancelar
@@ -424,7 +459,7 @@ export default function ClienteJuridicoNuevo() {
               className="btn btn-gold"
               disabled={isSubmitting || !authConsent}
             >
-              {isSubmitting ? <span className="spinner" /> : 'Guardar cliente'}
+              {isSubmitting ? <span className="spinner" /> : (isEdit ? 'Guardar cambios' : 'Guardar cliente')}
             </button>
           </div>
         </form>

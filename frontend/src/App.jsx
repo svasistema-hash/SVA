@@ -52,6 +52,7 @@ export default function App() {
           <Route path="clientes/juridicos" element={<TenantClientes />} />
           <Route path="clientes/juridicos/nuevo" element={<ClienteJuridicoNuevo />} />
           <Route path="clientes/juridicos/:id" element={<ClienteJuridicoDetalle />} />
+          <Route path="clientes/juridicos/:id/editar" element={<ClienteJuridicoNuevo />} />
           <Route path="contratos" element={<TenantContratos />} />
           <Route path="contratos/nuevo" element={<Wizard />} />
           <Route path="contratos/:id/editar" element={<Wizard />} />
