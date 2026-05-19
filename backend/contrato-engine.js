@@ -4,6 +4,7 @@ const db = require('./db');
 const { PDFS_PATH } = require('./config');
 const { decrypt } = require('./encryption');
 const { formatQuetzal } = require('./utils/money');
+const legalFormat = require('./utils/legal-format/legal-format');
 const {
   PAGE_WIDTH,
   PAGE_HEIGHT,
@@ -202,6 +203,79 @@ function buildVars({ representante, cliente, credito, garantia, firmas }) {
     valor_bien: garantia?.prenda?.valor_bien || '',
     valor_garantia: garantia?.valor_garantia || '',
     ingresos: cliente?.ingresos || '',
+    // ─── Variables del motor de formato legal (F7) ──────────────
+    // Coexisten con las anteriores; las plantillas viejas siguen funcionando.
+    ...buildLegalVars({ cliente, credito, firmas, garantia, fechaInicioISO, plazoMeses, fechaVencimientoISO }),
+  };
+}
+
+// Variables computadas con frases legales completas según protocolo notarial GT.
+// Si falta un dato, se renderiza como '[VAR]' (placeholder visible en el PDF).
+function buildLegalVars({ cliente, credito, firmas, garantia, fechaInicioISO, plazoMeses, fechaVencimientoISO }) {
+  const generoCliente = cliente?.genero || 'M';
+  // Frase de comparecencia del cliente individual (deudor).
+  const cliente_compareciente = legalFormat.renderClienteCompareciente({
+    nombre: cliente?.nombre,
+    dpi: cliente?.dpi,
+    genero: generoCliente,
+    edad: cliente?.edad,
+    fecha_nac: cliente?.fecha_nac,
+    estado_civil: cliente?.estado_civil,
+    profesion: cliente?.profesion,
+    pais: cliente?.pais || 'guatemala',
+    domicilio_local: cliente?.domicilio_local !== false,
+    domicilio: cliente?.domicilio,
+  });
+
+  // Fechas en letras.
+  let fecha_contrato_letras = '';
+  let fecha_contrato_apertura = '';
+  if (firmas?.fecha) {
+    try {
+      fecha_contrato_letras   = legalFormat.fechaALetras(firmas.fecha);
+      fecha_contrato_apertura = legalFormat.renderFechaContrato(firmas.fecha, firmas?.ciudad || 'Guatemala');
+    } catch { /* ignore */ }
+  }
+
+  // Montos y plazos en formato "[letras] (número)".
+  const fl = legalFormat.formatoLegal;
+  const safe = (fn) => { try { return fn(); } catch { return ''; } };
+
+  const monto_legal           = credito?.monto           ? safe(() => fl(credito.monto, { tipo: 'dinero' }))           : '';
+  const cuota_mensual_legal   = credito?.cuota_mensual   ? safe(() => fl(credito.cuota_mensual, { tipo: 'dinero' }))   : '';
+  const plazo_legal           = plazoMeses               ? safe(() => fl(parseInt(plazoMeses, 10), { tipo: 'plazo', sufijo: 'meses' })) : '';
+  const tasa_ordinaria_legal  = credito?.tasa_ordinaria  ? safe(() => fl(parseFloat(credito.tasa_ordinaria), { tipo: 'porcentaje' }))   : '';
+  const tasa_moratoria_legal  = credito?.tasa_moratoria  ? safe(() => fl(parseFloat(credito.tasa_moratoria), { tipo: 'porcentaje' }))   : '';
+  const base_calculo_legal    = credito?.base_calculo    ? safe(() => fl(parseInt(credito.base_calculo, 10), { tipo: 'plazo', sufijo: 'días' })) : '';
+  const ingresos_legal        = cliente?.ingresos        ? safe(() => fl(cliente.ingresos, { tipo: 'dinero' }))        : '';
+  const seguro_inmueble_legal = garantia?.hipoteca?.seguro_inmueble ? safe(() => fl(garantia.hipoteca.seguro_inmueble, { tipo: 'dinero' })) : '';
+  const valor_bien_legal      = garantia?.prenda?.valor_bien ? safe(() => fl(garantia.prenda.valor_bien, { tipo: 'dinero' })) : '';
+
+  // Concordancia para títulos del cliente.
+  const cliente_articulo      = legalFormat.articuloPersona(generoCliente);                  // 'EL' | 'LA'
+  const cliente_rol_deudor    = legalFormat.rolPersona('deudor', generoCliente);             // 'DEUDOR' | 'DEUDORA'
+  const cliente_rol_acreedor  = 'EL ACREEDOR'; // institución (banco), siempre invariable como "EL ACREEDOR" o "EL BANCO"
+  const cliente_nombre_upper  = cliente?.nombre ? legalFormat.nombreEnMayusculas(cliente.nombre) : '';
+  const cliente_dpi_letras    = cliente?.dpi ? safe(() => legalFormat.dpiALetras(cliente.dpi)) : '';
+
+  return {
+    cliente_compareciente,
+    fecha_contrato_letras,
+    fecha_contrato_apertura,
+    monto_legal,
+    cuota_mensual_legal,
+    plazo_legal,
+    tasa_ordinaria_legal,
+    tasa_moratoria_legal,
+    base_calculo_legal,
+    ingresos_legal,
+    seguro_inmueble_legal,
+    valor_bien_legal,
+    cliente_articulo,
+    cliente_rol_deudor,
+    cliente_rol_acreedor,
+    cliente_nombre_upper,
+    cliente_dpi_letras,
   };
 }
 
