@@ -69,6 +69,44 @@ router.get('/', (req, res, next) => {
   }
 });
 
+// F1 C4: conteo de contratos por estado (para sidebar/dashboard Financiera).
+// Devuelve un mapa { en_curso: N, revision_tenant: N, ... } filtrado por institución.
+router.get('/conteo-estados', (req, res, next) => {
+  try {
+    const { institucion } = req.query;
+    let sql = `
+      SELECT c.estado, COUNT(*) AS n
+      FROM contratos c
+      JOIN instituciones i ON c.institucion_id = i.id
+      WHERE 1=1`;
+    const params = [];
+    if (req.user.institucion_id) {
+      sql += ' AND c.institucion_id = ?';
+      params.push(req.user.institucion_id);
+    }
+    if (institucion) {
+      sql += ' AND i.slug = ?';
+      params.push(institucion);
+    }
+    sql += ' GROUP BY c.estado';
+    const filas = db.prepare(sql).all(...params);
+    // Inicializa todos los estados con 0 para que el sidebar no muestre "undefined".
+    const conteo = {
+      en_curso: 0,
+      revision_tenant: 0,
+      revision_abogados: 0,
+      completado: 0,
+      abandonada_sin_inicio: 0,
+      abandonada_incompleta: 0,
+      anulada: 0,
+    };
+    filas.forEach((f) => { conteo[f.estado] = f.n; });
+    res.json(conteo);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/next-correlativo', (req, res, next) => {
   try {
     const institucion_id = parseInt(req.query.institucion_id, 10);
@@ -222,6 +260,7 @@ router.put('/:id', (req, res, next) => {
     }
     const updates = [];
     const params = [];
+    const seccionesModificadas = [];
     // datos_cliente y datos_garantia van encriptados; el resto en plaintext.
     // estado NO se modifica vía PUT: usar /avanzar, /regresar, /anular, /reenviar-link.
     const map = {
@@ -234,12 +273,21 @@ router.put('/:id', (req, res, next) => {
       if (req.body && req.body[k] !== undefined) {
         updates.push(`${k} = ?`);
         params.push(transform(req.body[k]));
+        seccionesModificadas.push(k);
       }
     }
     if (!updates.length)
       return res.status(400).json({ error: 'No hay campos para actualizar', code: 400 });
     params.push(existing.id);
-    db.prepare(`UPDATE contratos SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+    const tx = db.transaction(() => {
+      db.prepare(`UPDATE contratos SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+      // F1 C4: registrar en audit_log qué secciones modificó el usuario banco.
+      audit(req, 'CONTRATO_DATOS_MODIFICADOS', 'contrato', existing.id, {
+        secciones: seccionesModificadas,
+        motivo: req.body?.motivo || null,
+      });
+    });
+    tx();
     const row = db.prepare('SELECT * FROM contratos WHERE id = ?').get(existing.id);
     res.json(parseJsonFields(row));
   } catch (err) {

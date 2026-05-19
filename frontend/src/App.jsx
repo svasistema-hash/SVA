@@ -22,6 +22,10 @@ import TenantModeloEdit from './pages/tenant/ModeloEdit';
 import TenantConfiguracion from './pages/tenant/Configuracion';
 import TenantSolicitudes from './pages/tenant/Solicitudes';
 import TenantReportes from './pages/tenant/Reportes';
+import Financiera from './pages/tenant/Financiera';
+import FinancieraNueva from './pages/tenant/FinancieraNueva';
+import FinancieraLista from './pages/tenant/FinancieraLista';
+import FinancieraDetalle from './pages/tenant/FinancieraDetalle';
 
 export default function App() {
   return (
@@ -62,6 +66,14 @@ export default function App() {
           <Route path="configuracion" element={<TenantConfiguracion />} />
           <Route path="solicitudes" element={<TenantSolicitudes />} />
           <Route path="reportes" element={<TenantReportes />} />
+          {/* F1 C4: módulo Financiera */}
+          <Route path="financiera" element={<Financiera />} />
+          <Route path="financiera/nueva" element={<FinancieraNueva />} />
+          <Route path="financiera/en-curso" element={<FinancieraLista />} />
+          <Route path="financiera/en-revision" element={<FinancieraLista />} />
+          <Route path="financiera/con-bufete" element={<FinancieraLista />} />
+          <Route path="financiera/completadas" element={<FinancieraLista />} />
+          <Route path="financiera/:id" element={<FinancieraDetalle />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

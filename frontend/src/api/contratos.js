@@ -13,6 +13,22 @@ export const createContrato = (data) => client.post('/contratos', data).then((r)
 export const updateContrato = (id, data) => client.put(`/contratos/${id}`, data).then((r) => r.data);
 export const generatePdf = (id) => client.post(`/contratos/${id}/pdf`).then((r) => r.data);
 
+// F1 C4
+export const fetchConteoEstados = (instSlug) =>
+  client.get(`/contratos/conteo-estados?institucion=${encodeURIComponent(instSlug)}`).then((r) => r.data);
+export const fetchAuditLog = (id) =>
+  client.get(`/contratos/${id}/audit-log`).then((r) => r.data);
+export const generarTokenCliente = (id) =>
+  client.post(`/contratos/${id}/token-cliente`).then((r) => r.data);
+export const avanzarContrato = (id) =>
+  client.post(`/contratos/${id}/avanzar`).then((r) => r.data);
+export const regresarContrato = (id, motivo) =>
+  client.post(`/contratos/${id}/regresar`, { motivo }).then((r) => r.data);
+export const anularContrato = (id, motivo) =>
+  client.post(`/contratos/${id}/anular`, { motivo }).then((r) => r.data);
+export const reenviarLink = (id) =>
+  client.post(`/contratos/${id}/reenviar-link`).then((r) => r.data);
+
 export const openPdf = async (id) => {
   const res = await client.get(`/contratos/${id}/pdf`, { responseType: 'blob' });
   const url = URL.createObjectURL(res.data);
