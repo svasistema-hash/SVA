@@ -95,7 +95,9 @@ db.exec(`
     ingresos_rango TEXT,
     dpi_hash TEXT,             -- HMAC purpose 'dpi'
     nit_hash TEXT,             -- HMAC purpose 'nit'
-    conyuge_dpi_hash TEXT      -- HMAC purpose 'dpi' (mismo namespace que dpi_hash)
+    conyuge_dpi_hash TEXT,     -- HMAC purpose 'dpi' (mismo namespace que dpi_hash)
+    tipo_persona TEXT NOT NULL DEFAULT 'individual'
+      CHECK (tipo_persona IN ('individual','juridica'))
   );
   CREATE INDEX IF NOT EXISTS idx_clientes_inst ON clientes(institucion_id);
   CREATE UNIQUE INDEX IF NOT EXISTS uq_clientes_inst_dpi_hash
@@ -104,6 +106,71 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_clientes_dpi_hash ON clientes(dpi_hash);
   CREATE INDEX IF NOT EXISTS idx_clientes_nit_hash ON clientes(nit_hash);
   CREATE INDEX IF NOT EXISTS idx_clientes_conyuge_dpi_hash ON clientes(conyuge_dpi_hash);
+  CREATE INDEX IF NOT EXISTS idx_clientes_tipo_persona ON clientes(tipo_persona);
+
+  -- Datos extra para clientes con tipo_persona = 'juridica' (relación 1:1).
+  -- rep_dpi y capital_* viven como ciphertext AES-GCM; rep_dpi_hash con HMAC purpose 'dpi'.
+  CREATE TABLE IF NOT EXISTS clientes_juridicos (
+    cliente_id INTEGER PRIMARY KEY REFERENCES clientes(id) ON DELETE CASCADE,
+
+    nombre_comercial TEXT,
+    tipo_sociedad TEXT NOT NULL CHECK (tipo_sociedad IN
+      ('S.A.','S.R.L.','Sociedad Civil','E.M.I.',
+       'Cooperativa','Asociación/Fundación','Otra')),
+    tipo_sociedad_otra TEXT,
+    objeto_social TEXT NOT NULL,
+
+    escritura_numero TEXT NOT NULL,
+    escritura_fecha TEXT NOT NULL,
+    escritura_notario TEXT NOT NULL,
+
+    registro_mercantil_numero TEXT NOT NULL,
+    registro_mercantil_folio TEXT NOT NULL,
+    registro_mercantil_libro TEXT NOT NULL,
+    registro_mercantil_fecha TEXT NOT NULL,
+
+    patente_sociedad_numero TEXT NOT NULL,
+    patente_sociedad_fecha TEXT NOT NULL,
+    patente_empresa_numero TEXT NOT NULL,
+    patente_empresa_fecha TEXT NOT NULL,
+
+    capital_autorizado TEXT NOT NULL,   -- ciphertext AES-GCM (normalizeMoney)
+    capital_suscrito TEXT NOT NULL,
+    capital_pagado TEXT NOT NULL,
+
+    regimen_tributario TEXT,
+    actividad_economica TEXT,
+    fecha_inicio_actividades TEXT,
+
+    rep_nombre_completo TEXT NOT NULL,
+    rep_dpi TEXT NOT NULL,              -- ciphertext AES-GCM
+    rep_dpi_hash TEXT NOT NULL,         -- HMAC purpose 'dpi'
+    rep_profesion TEXT,
+    rep_cargo TEXT NOT NULL CHECK (rep_cargo IN
+      ('Administrador Único','Presidente','Gerente General',
+       'Representante Legal designado','Apoderado')),
+    rep_acta_numero TEXT NOT NULL,
+    rep_acta_fecha TEXT NOT NULL,
+    rep_acta_notario TEXT NOT NULL,
+    rep_inscripcion_numero TEXT NOT NULL,
+    rep_inscripcion_folio TEXT,
+    rep_inscripcion_libro TEXT,
+    rep_vigencia_inicio TEXT NOT NULL,
+    rep_vigencia_vencimiento TEXT NOT NULL,
+
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_clientes_juridicos_rep_dpi_hash
+    ON clientes_juridicos(rep_dpi_hash);
+
+  CREATE TRIGGER IF NOT EXISTS trg_clientes_juridicos_updated
+  AFTER UPDATE ON clientes_juridicos
+  FOR EACH ROW
+  BEGIN
+    UPDATE clientes_juridicos SET updated_at = datetime('now')
+      WHERE cliente_id = OLD.cliente_id;
+  END;
 
   CREATE TABLE IF NOT EXISTS contratos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -202,6 +269,9 @@ if (!clientesCols.includes('ingresos_rango')) db.exec("ALTER TABLE clientes ADD 
 if (!clientesCols.includes('dpi_hash')) db.exec("ALTER TABLE clientes ADD COLUMN dpi_hash TEXT");
 if (!clientesCols.includes('nit_hash')) db.exec("ALTER TABLE clientes ADD COLUMN nit_hash TEXT");
 if (!clientesCols.includes('conyuge_dpi_hash')) db.exec("ALTER TABLE clientes ADD COLUMN conyuge_dpi_hash TEXT");
+if (!clientesCols.includes('tipo_persona')) {
+  db.exec("ALTER TABLE clientes ADD COLUMN tipo_persona TEXT NOT NULL DEFAULT 'individual' CHECK (tipo_persona IN ('individual','juridica'))");
+}
 
 const fiadoresCols = db.prepare('PRAGMA table_info(fiadores)').all().map((c) => c.name);
 if (!fiadoresCols.includes('dpi_hash')) db.exec("ALTER TABLE fiadores ADD COLUMN dpi_hash TEXT");
