@@ -1,24 +1,38 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { fetchInstitucion } from '../api/instituciones';
+import { fetchConteoEstados } from '../api/contratos';
 
-// NAV: links simples + un grupo expandible para Clientes (con subitems Todos/Ind/Jur).
+// NAV: links simples + grupos expandibles (Clientes, Solicitudes con contadores).
 const NAV = [
   { type: 'link', to: '', end: true, label: 'Dashboard' },
   {
     type: 'group',
     label: 'Clientes',
-    match: 'clientes', // ruta cuyo prefijo activa el grupo
+    match: 'clientes',
     children: [
       { to: 'clientes', end: true, label: 'Todos' },
       { to: 'clientes/individuales', label: 'Individuales' },
       { to: 'clientes/juridicos', label: 'Jurídicos' },
     ],
   },
+  {
+    type: 'group',
+    label: 'Solicitudes',
+    match: 'financiera',
+    counterKey: 'total_solicitudes', // suma de en_curso + revision_tenant + revision_abogados
+    children: [
+      { to: 'financiera', end: true, label: 'Resumen' },
+      { to: 'financiera/nueva', label: 'Nueva solicitud' },
+      { to: 'financiera/en-curso', label: 'En curso',     counterKey: 'en_curso' },
+      { to: 'financiera/en-revision', label: 'En revisión', counterKey: 'revision_tenant' },
+      { to: 'financiera/con-bufete', label: 'Con bufete',  counterKey: 'revision_abogados' },
+      { to: 'financiera/completadas', label: 'Completadas', counterKey: 'completado' },
+    ],
+  },
   { type: 'link', to: 'contratos', label: 'Contratos' },
   { type: 'link', to: 'modelos', label: 'Modelos' },
   { type: 'link', to: 'configuracion', label: 'Institución' },
-  { type: 'link', to: 'solicitudes', label: 'Portal del cliente' },
   { type: 'link', to: 'reportes', label: 'Reportes' },
 ];
 
@@ -36,14 +50,32 @@ export default function TenantLayout() {
   const [inst, setInst] = useState(null);
   const [err, setErr] = useState(null);
   const [openGroup, setOpenGroup] = useState(null);
+  const [conteo, setConteo] = useState(null);
 
   useEffect(() => {
     setInst(null);
     setErr(null);
+    setConteo(null);
     fetchInstitucion(slug)
       .then(setInst)
       .catch((e) => setErr(e.response?.data?.error || e.message));
   }, [slug]);
+
+  // Refresca conteos en cada cambio de ruta (no es polling, solo on-nav) para que
+  // el sidebar quede sincronizado tras acciones como "marcar como listo" o "anular".
+  useEffect(() => {
+    if (!slug) return;
+    fetchConteoEstados(slug).then(setConteo).catch(() => setConteo(null));
+  }, [slug, loc.pathname]);
+
+  const totalSolicitudes = conteo
+    ? (conteo.en_curso || 0) + (conteo.revision_tenant || 0) + (conteo.revision_abogados || 0)
+    : null;
+  const contadorValor = (key) => {
+    if (!conteo) return null;
+    if (key === 'total_solicitudes') return totalSolicitudes;
+    return conteo[key] || 0;
+  };
 
   // Mantener abierto el grupo cuyo path matchea la URL actual.
   useEffect(() => {
@@ -78,6 +110,7 @@ export default function TenantLayout() {
             const isOpen = openGroup === n.label;
             const sub = loc.pathname.replace(`/instituciones/${slug}/`, '').replace(`/instituciones/${slug}`, '');
             const groupActive = n.match && sub.startsWith(n.match);
+            const groupCounter = n.counterKey ? contadorValor(n.counterKey) : null;
             return (
               <div key={n.label}>
                 <div
@@ -86,21 +119,32 @@ export default function TenantLayout() {
                   style={{ cursor: 'pointer' }}
                 >
                   <span>{n.label}</span>
-                  <span className="count" aria-hidden>{isOpen ? '▾' : '▸'}</span>
+                  <span className="count" aria-hidden>
+                    {groupCounter != null && groupCounter > 0 && (
+                      <span style={{ marginRight: 6, color: 'var(--gold)' }}>{groupCounter}</span>
+                    )}
+                    {isOpen ? '▾' : '▸'}
+                  </span>
                 </div>
-                {isOpen && n.children.map((c) => (
-                  <NavLink
-                    key={c.to}
-                    to={c.to}
-                    end={c.end}
-                    className={({ isActive }) =>
-                      'sidebar-link sidebar-sublink' + (isActive ? ' active' : '')
-                    }
-                  >
-                    <span className="ico">·</span>
-                    <span>{c.label}</span>
-                  </NavLink>
-                ))}
+                {isOpen && n.children.map((c) => {
+                  const subCounter = c.counterKey ? contadorValor(c.counterKey) : null;
+                  return (
+                    <NavLink
+                      key={c.to}
+                      to={c.to}
+                      end={c.end}
+                      className={({ isActive }) =>
+                        'sidebar-link sidebar-sublink' + (isActive ? ' active' : '')
+                      }
+                    >
+                      <span className="ico">·</span>
+                      <span style={{ flex: 1 }}>{c.label}</span>
+                      {subCounter != null && subCounter > 0 && (
+                        <span className="count" style={{ fontSize: 11 }}>{subCounter}</span>
+                      )}
+                    </NavLink>
+                  );
+                })}
               </div>
             );
           }

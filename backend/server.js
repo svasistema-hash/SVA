@@ -16,8 +16,10 @@ const modelosRoutes = require('./routes/modelos');
 const clausulasRoutes = require('./routes/clausulas');
 const clientesJuridicosRoutes = require('./routes/clientesJuridicos');
 const { authRouter: solicitudesAuthRouter, publicRouter: solicitudesPublicRouter } = require('./routes/solicitudes');
+const pendientesRoutes = require('./routes/pendientes');
 const { authenticate } = require('./middleware/auth');
 const errorHandler = require('./middleware/errorHandler');
+const ocr = require('./utils/ocr');
 
 const app = express();
 
@@ -58,6 +60,7 @@ app.get('/api/files/:filename', authenticate, (req, res, next) => {
 });
 
 app.use('/api/instituciones', authenticate, institucionesRoutes);
+app.use('/api/pendientes', authenticate, pendientesRoutes);
 app.use('/api/contratos', authenticate, contratosRoutes);
 // /api/clientes/juridicos DEBE registrarse ANTES de /api/clientes para que la
 // segunda ruta (con GET /:id) no capture "juridicos" como un id.
@@ -71,6 +74,8 @@ app.use(errorHandler);
 
 const server = app.listen(PORT, () => {
   console.log(`LexDocs API escuchando en http://localhost:${PORT}`);
+  // Pre-carga del modelo Tesseract 'spa' en background (no bloquea el listen).
+  ocr.warmUp();
 });
 
 process.on('SIGTERM', () => server.close(() => process.exit(0)));

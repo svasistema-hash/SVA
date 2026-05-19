@@ -1,11 +1,14 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const db = require('../db');
 const { generatePdf } = require('../utils/pdfGenerator');
 const { nextCorrelativo, compilarContrato } = require('../contrato-engine');
 const { PDFS_PATH } = require('../config');
 const { encrypt, decrypt } = require('../encryption');
+const { puedeTransitar, siguienteForward, siguienteBackward, estadosPosibles } = require('../utils/contrato-transiciones');
+const { audit } = require('../utils/audit');
 
 const router = express.Router();
 
@@ -66,6 +69,44 @@ router.get('/', (req, res, next) => {
   }
 });
 
+// F1 C4: conteo de contratos por estado (para sidebar/dashboard Financiera).
+// Devuelve un mapa { en_curso: N, revision_tenant: N, ... } filtrado por institución.
+router.get('/conteo-estados', (req, res, next) => {
+  try {
+    const { institucion } = req.query;
+    let sql = `
+      SELECT c.estado, COUNT(*) AS n
+      FROM contratos c
+      JOIN instituciones i ON c.institucion_id = i.id
+      WHERE 1=1`;
+    const params = [];
+    if (req.user.institucion_id) {
+      sql += ' AND c.institucion_id = ?';
+      params.push(req.user.institucion_id);
+    }
+    if (institucion) {
+      sql += ' AND i.slug = ?';
+      params.push(institucion);
+    }
+    sql += ' GROUP BY c.estado';
+    const filas = db.prepare(sql).all(...params);
+    // Inicializa todos los estados con 0 para que el sidebar no muestre "undefined".
+    const conteo = {
+      en_curso: 0,
+      revision_tenant: 0,
+      revision_abogados: 0,
+      completado: 0,
+      abandonada_sin_inicio: 0,
+      abandonada_incompleta: 0,
+      anulada: 0,
+    };
+    filas.forEach((f) => { conteo[f.estado] = f.n; });
+    res.json(conteo);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/next-correlativo', (req, res, next) => {
   try {
     const institucion_id = parseInt(req.query.institucion_id, 10);
@@ -75,6 +116,34 @@ router.get('/next-correlativo', (req, res, next) => {
     }
     const year = new Date().getFullYear();
     res.json({ correlativo: nextCorrelativo(institucion_id, year) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// F1 C3: genera token público para que el cliente complete sus datos vía portal.
+// Token vive 48h. Se puede regenerar (anula los anteriores no usados del mismo contrato).
+router.post('/:id/token-cliente', (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const contrato = db.prepare('SELECT id, institucion_id, estado FROM contratos WHERE id = ?').get(id);
+    if (!contrato) return res.status(404).json({ error: 'Contrato no encontrado', code: 404 });
+    if (req.user.institucion_id && req.user.institucion_id !== contrato.institucion_id) {
+      return res.status(403).json({ error: 'Sin acceso a este contrato', code: 403 });
+    }
+    if (contrato.estado !== 'en_curso') {
+      return res.status(409).json({
+        error: `No se puede generar link de cliente cuando el contrato está en estado '${contrato.estado}'`,
+        code: 409,
+      });
+    }
+    const token = crypto.randomUUID();
+    const expires = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+    db.prepare(
+      `INSERT INTO contratos_tokens (contrato_id, token, expires_at, created_by) VALUES (?, ?, ?, ?)`
+    ).run(contrato.id, token, expires, req.user.userId || null);
+    audit(req, 'generar_token_cliente', 'contrato', contrato.id, { expires_at: expires });
+    res.status(201).json({ token, expires_at: expires, url_path: `/solicitud/${token}` });
   } catch (err) {
     next(err);
   }
@@ -102,7 +171,7 @@ router.post('/', (req, res, next) => {
       .prepare(
         `INSERT INTO contratos
          (institucion_id, modelo_id, no_contrato, estado, datos_cliente, datos_credito, datos_garantia, datos_firmas)
-         VALUES (?, ?, ?, 'borrador', ?, ?, ?, ?)`
+         VALUES (?, ?, ?, 'en_curso', ?, ?, ?, ?)`
       )
       .run(
         institucion_id,
@@ -191,9 +260,10 @@ router.put('/:id', (req, res, next) => {
     }
     const updates = [];
     const params = [];
+    const seccionesModificadas = [];
     // datos_cliente y datos_garantia van encriptados; el resto en plaintext.
+    // estado NO se modifica vía PUT: usar /avanzar, /regresar, /anular, /reenviar-link.
     const map = {
-      estado: (v) => v,
       datos_cliente: (v) => encrypt(JSON.stringify(v)),
       datos_credito: (v) => JSON.stringify(v),
       datos_garantia: (v) => encrypt(JSON.stringify(v)),
@@ -203,12 +273,21 @@ router.put('/:id', (req, res, next) => {
       if (req.body && req.body[k] !== undefined) {
         updates.push(`${k} = ?`);
         params.push(transform(req.body[k]));
+        seccionesModificadas.push(k);
       }
     }
     if (!updates.length)
       return res.status(400).json({ error: 'No hay campos para actualizar', code: 400 });
     params.push(existing.id);
-    db.prepare(`UPDATE contratos SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+    const tx = db.transaction(() => {
+      db.prepare(`UPDATE contratos SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+      // F1 C4: registrar en audit_log qué secciones modificó el usuario banco.
+      audit(req, 'CONTRATO_DATOS_MODIFICADOS', 'contrato', existing.id, {
+        secciones: seccionesModificadas,
+        motivo: req.body?.motivo || null,
+      });
+    });
+    tx();
     const row = db.prepare('SELECT * FROM contratos WHERE id = ?').get(existing.id);
     res.json(parseJsonFields(row));
   } catch (err) {
@@ -260,6 +339,156 @@ router.get('/:id/pdf', (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// ════════════════════════════════════════════════════════════
+// F1: Transiciones de estado + acciones derivadas
+// ════════════════════════════════════════════════════════════
+
+// Helper que carga el contrato y verifica tenant. Retorna { row } o
+// envía respuesta de error y retorna null.
+function loadContratoOrEnd(req, res) {
+  const row = db.prepare('SELECT * FROM contratos WHERE id = ?').get(req.params.id);
+  if (!row) { res.status(404).json({ error: 'Contrato no encontrado', code: 404 }); return null; }
+  if (req.user.institucion_id && req.user.institucion_id !== row.institucion_id) {
+    res.status(403).json({ error: 'Sin acceso a este contrato', code: 403 });
+    return null;
+  }
+  return row;
+}
+
+// Aplica una transición y registra audit. Asume que ya se verificaron permisos.
+function aplicarTransicion(req, row, nuevoEstado, extraSets = {}, detalles = {}) {
+  if (!puedeTransitar(row.estado, nuevoEstado)) {
+    return { error: `Transición no permitida: '${row.estado}' → '${nuevoEstado}'. Estados válidos: ${estadosPosibles(row.estado).join(', ') || '(terminal)'}`, code: 400 };
+  }
+  const sets = ['estado = ?', ...Object.keys(extraSets).map((k) => `${k} = ?`)];
+  const vals = [nuevoEstado, ...Object.values(extraSets), row.id];
+  const tx = db.transaction(() => {
+    db.prepare(`UPDATE contratos SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+    audit(req, 'CONTRATO_TRANSICION', 'contrato', row.id, {
+      de: row.estado, a: nuevoEstado, ...detalles,
+    });
+  });
+  tx();
+  return { ok: true };
+}
+
+// POST /api/contratos/:id/avanzar
+router.post('/:id/avanzar', (req, res, next) => {
+  try {
+    const row = loadContratoOrEnd(req, res); if (!row) return;
+    const nuevo = siguienteForward(row.estado);
+    if (!nuevo) return res.status(400).json({ error: `Sin transición forward desde '${row.estado}'`, code: 400 });
+    const extra = nuevo === 'completado' ? { completado_at: "datetime('now')" } : {};
+    // 'completado' requiere setear completado_at via expresión SQL — usamos raw bind.
+    let result;
+    if (nuevo === 'completado') {
+      if (!puedeTransitar(row.estado, nuevo)) {
+        return res.status(400).json({ error: `Transición no permitida: '${row.estado}' → '${nuevo}'`, code: 400 });
+      }
+      const tx = db.transaction(() => {
+        db.prepare("UPDATE contratos SET estado = ?, completado_at = datetime('now') WHERE id = ?").run(nuevo, row.id);
+        audit(req, 'CONTRATO_TRANSICION', 'contrato', row.id, { de: row.estado, a: nuevo });
+      });
+      tx();
+      result = { ok: true };
+    } else {
+      result = aplicarTransicion(req, row, nuevo);
+    }
+    if (result.error) return res.status(result.code).json({ error: result.error, code: result.code });
+    res.json(db.prepare('SELECT id, estado, completado_at FROM contratos WHERE id = ?').get(row.id));
+  } catch (err) { next(err); }
+});
+
+// POST /api/contratos/:id/regresar
+router.post('/:id/regresar', (req, res, next) => {
+  try {
+    const row = loadContratoOrEnd(req, res); if (!row) return;
+    const nuevo = siguienteBackward(row.estado);
+    if (!nuevo) return res.status(400).json({ error: `Sin transición backward desde '${row.estado}'`, code: 400 });
+    const result = aplicarTransicion(req, row, nuevo, {}, { motivo: req.body?.motivo || null });
+    if (result.error) return res.status(result.code).json({ error: result.error, code: result.code });
+    res.json(db.prepare('SELECT id, estado FROM contratos WHERE id = ?').get(row.id));
+  } catch (err) { next(err); }
+});
+
+// POST /api/contratos/:id/anular { motivo }
+router.post('/:id/anular', (req, res, next) => {
+  try {
+    const row = loadContratoOrEnd(req, res); if (!row) return;
+    const motivo = (req.body?.motivo || '').trim();
+    if (!motivo) return res.status(400).json({ error: 'motivo requerido', code: 400 });
+    if (!puedeTransitar(row.estado, 'anulada')) {
+      return res.status(400).json({ error: `No se puede anular desde '${row.estado}'`, code: 400 });
+    }
+    const tx = db.transaction(() => {
+      db.prepare(
+        "UPDATE contratos SET estado = 'anulada', anulado_motivo = ?, anulado_por = ?, anulado_at = datetime('now') WHERE id = ?"
+      ).run(motivo, req.user.userId || null, row.id);
+      audit(req, 'CONTRATO_ANULADO', 'contrato', row.id, { de: row.estado, motivo });
+    });
+    tx();
+    res.json(db.prepare('SELECT id, estado, anulado_motivo, anulado_at FROM contratos WHERE id = ?').get(row.id));
+  } catch (err) { next(err); }
+});
+
+// POST /api/contratos/:id/reenviar-link
+// Crea token nuevo de 48h y mueve abandonada_* → en_curso.
+router.post('/:id/reenviar-link', (req, res, next) => {
+  try {
+    const row = loadContratoOrEnd(req, res); if (!row) return;
+    const elegibles = ['abandonada_sin_inicio', 'abandonada_incompleta', 'en_curso'];
+    if (!elegibles.includes(row.estado)) {
+      return res.status(400).json({ error: `No se puede reenviar link desde '${row.estado}'`, code: 400 });
+    }
+    const token = crypto.randomUUID();
+    const expires = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+    const tx = db.transaction(() => {
+      db.prepare(
+        'INSERT INTO solicitudes_tokens (institucion_id, token, expires_at) VALUES (?, ?, ?)'
+      ).run(row.institucion_id, token, expires);
+      if (row.estado !== 'en_curso') {
+        db.prepare("UPDATE contratos SET estado = 'en_curso' WHERE id = ?").run(row.id);
+        audit(req, 'CONTRATO_TRANSICION', 'contrato', row.id, { de: row.estado, a: 'en_curso', via: 'reenviar-link' });
+      }
+      audit(req, 'TOKEN_GENERADO', 'contrato', row.id, { token_prefix: token.slice(0, 8), expires_at: expires });
+    });
+    tx();
+    res.json({ token, expires_at: expires, estado: 'en_curso' });
+  } catch (err) { next(err); }
+});
+
+// POST /api/contratos/:id/dpi-fisico-recibido
+router.post('/:id/dpi-fisico-recibido', (req, res, next) => {
+  try {
+    const row = loadContratoOrEnd(req, res); if (!row) return;
+    // (En F8 esta acción será solo para abogado_bufete; hoy abierto.)
+    const tx = db.transaction(() => {
+      db.prepare(
+        "UPDATE contratos SET dpi_fisico_recibido = 1, dpi_fisico_recibido_por = ?, dpi_fisico_recibido_at = datetime('now') WHERE id = ?"
+      ).run(req.user.userId || null, row.id);
+      audit(req, 'DPI_FISICO_RECIBIDO', 'contrato', row.id, {});
+    });
+    tx();
+    res.json(db.prepare(
+      'SELECT id, dpi_fisico_recibido, dpi_fisico_recibido_por, dpi_fisico_recibido_at FROM contratos WHERE id = ?'
+    ).get(row.id));
+  } catch (err) { next(err); }
+});
+
+// GET /api/contratos/:id/audit-log
+router.get('/:id/audit-log', (req, res, next) => {
+  try {
+    const row = loadContratoOrEnd(req, res); if (!row) return;
+    const entries = db.prepare(
+      "SELECT id, timestamp, user_email, user_role, accion, detalles, ip FROM audit_log WHERE entidad_tipo = 'contrato' AND entidad_id = ? ORDER BY timestamp ASC, id ASC"
+    ).all(row.id).map((e) => ({
+      ...e,
+      detalles: e.detalles ? JSON.parse(e.detalles) : null,
+    }));
+    res.json(entries);
+  } catch (err) { next(err); }
 });
 
 module.exports = router;

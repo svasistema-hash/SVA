@@ -177,7 +177,15 @@ db.exec(`
     institucion_id INTEGER NOT NULL REFERENCES instituciones(id) ON DELETE CASCADE,
     modelo_id INTEGER NOT NULL REFERENCES modelos(id),
     no_contrato TEXT NOT NULL,
-    estado TEXT NOT NULL DEFAULT 'borrador' CHECK (estado IN ('borrador','revision','firmado')),
+    estado TEXT NOT NULL DEFAULT 'en_curso' CHECK (estado IN (
+      'en_curso',
+      'revision_tenant',
+      'revision_abogados',
+      'completado',
+      'abandonada_sin_inicio',
+      'abandonada_incompleta',
+      'anulada'
+    )),
     datos_cliente TEXT,        -- ciphertext de JSON
     datos_credito TEXT,        -- JSON plaintext (no sensible)
     datos_garantia TEXT,       -- ciphertext de JSON
@@ -186,6 +194,16 @@ db.exec(`
     pdf_filename TEXT,         -- nombre real en disco (con sufijo UUID)
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    -- F1: estados extendidos y trazabilidad
+    anulado_motivo TEXT,
+    anulado_por INTEGER REFERENCES users(id),
+    anulado_at TEXT,
+    completado_at TEXT,
+    dpi_fisico_recibido INTEGER NOT NULL DEFAULT 0,
+    dpi_fisico_recibido_por INTEGER REFERENCES users(id),
+    dpi_fisico_recibido_at TEXT,
+    -- F1 C3: borrador del wizard público del cliente (JSON serializado).
+    datos_borrador TEXT,
     UNIQUE (institucion_id, no_contrato)
   );
   CREATE INDEX IF NOT EXISTS idx_contratos_inst ON contratos(institucion_id);
@@ -237,6 +255,19 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_tokens_token ON solicitudes_tokens(token);
   CREATE INDEX IF NOT EXISTS idx_tokens_inst ON solicitudes_tokens(institucion_id, usado);
 
+  -- F1 C3: tokens públicos por contrato (link del cliente, 48h).
+  CREATE TABLE IF NOT EXISTS contratos_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    contrato_id INTEGER NOT NULL REFERENCES contratos(id) ON DELETE CASCADE,
+    token TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    usado INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    created_by INTEGER REFERENCES users(id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_contratos_tokens_token ON contratos_tokens(token);
+  CREATE INDEX IF NOT EXISTS idx_contratos_tokens_contrato ON contratos_tokens(contrato_id);
+
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT NOT NULL UNIQUE,
@@ -248,6 +279,25 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_users_inst ON users(institucion_id);
+
+  -- F1: registro inmutable de acciones para auditoría legal.
+  CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+    user_id INTEGER REFERENCES users(id),
+    user_email TEXT,
+    user_role TEXT,
+    institucion_id INTEGER,
+    accion TEXT NOT NULL,
+    entidad_tipo TEXT,
+    entidad_id INTEGER,
+    detalles TEXT,
+    ip TEXT,
+    user_agent TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_audit_log_entidad ON audit_log(entidad_tipo, entidad_id);
+  CREATE INDEX IF NOT EXISTS idx_audit_log_user ON audit_log(user_id);
+  CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON audit_log(timestamp);
 `);
 
 // Migraciones idempotentes para DBs que existían con schema previo.
@@ -258,6 +308,14 @@ if (!instCols.includes('cuenta_cobro')) db.exec("ALTER TABLE instituciones ADD C
 
 const contratosCols = db.prepare('PRAGMA table_info(contratos)').all().map((c) => c.name);
 if (!contratosCols.includes('pdf_filename')) db.exec("ALTER TABLE contratos ADD COLUMN pdf_filename TEXT");
+if (!contratosCols.includes('anulado_motivo'))           db.exec("ALTER TABLE contratos ADD COLUMN anulado_motivo TEXT");
+if (!contratosCols.includes('anulado_por'))              db.exec("ALTER TABLE contratos ADD COLUMN anulado_por INTEGER REFERENCES users(id)");
+if (!contratosCols.includes('anulado_at'))               db.exec("ALTER TABLE contratos ADD COLUMN anulado_at TEXT");
+if (!contratosCols.includes('completado_at'))            db.exec("ALTER TABLE contratos ADD COLUMN completado_at TEXT");
+if (!contratosCols.includes('dpi_fisico_recibido'))      db.exec("ALTER TABLE contratos ADD COLUMN dpi_fisico_recibido INTEGER NOT NULL DEFAULT 0");
+if (!contratosCols.includes('dpi_fisico_recibido_por'))  db.exec("ALTER TABLE contratos ADD COLUMN dpi_fisico_recibido_por INTEGER REFERENCES users(id)");
+if (!contratosCols.includes('dpi_fisico_recibido_at'))   db.exec("ALTER TABLE contratos ADD COLUMN dpi_fisico_recibido_at TEXT");
+if (!contratosCols.includes('datos_borrador'))           db.exec("ALTER TABLE contratos ADD COLUMN datos_borrador TEXT");
 
 const clientesCols = db.prepare('PRAGMA table_info(clientes)').all().map((c) => c.name);
 if (!clientesCols.includes('estado')) db.exec("ALTER TABLE clientes ADD COLUMN estado TEXT NOT NULL DEFAULT 'activo'");

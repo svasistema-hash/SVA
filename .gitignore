@@ -1,22 +1,32 @@
 # Secretos y entornos
 .env
-.env.local
+.env.*
+!.env.example
 
 # Bases de datos y backups
 *.db
 *.db-shm
 *.db-wal
 *.db.backup-*
+*.db.pre-*
+*.db.pre-*.sql
 *.sql
 lexdocs.db.pre-*
 
 # Artefactos generados
 /uploads
+uploads/
 /pdfs
+pdfs/
 /screenshots
+node_modules/
 node_modules
 dist
 dist-ssr
+
+# Modelos OCR de tesseract.js (se descargan automáticamente)
+*.traineddata
+.tmp-ocr-test/
 
 # Editor / IDE
 .vscode/

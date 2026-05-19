@@ -9,6 +9,8 @@ import Instituciones from './pages/Instituciones';
 import Contratos from './pages/Contratos';
 import Contrato from './pages/Contrato';
 import Wizard from './pages/Wizard';
+import Pendientes from './pages/bufete/Pendientes';
+import PendienteDetalle from './pages/bufete/PendienteDetalle';
 
 import TenantDashboard from './pages/tenant/Dashboard';
 import TenantClientes from './pages/tenant/Clientes';
@@ -22,19 +24,26 @@ import TenantModeloEdit from './pages/tenant/ModeloEdit';
 import TenantConfiguracion from './pages/tenant/Configuracion';
 import TenantSolicitudes from './pages/tenant/Solicitudes';
 import TenantReportes from './pages/tenant/Reportes';
+import Financiera from './pages/tenant/Financiera';
+import FinancieraNueva from './pages/tenant/FinancieraNueva';
+import FinancieraLista from './pages/tenant/FinancieraLista';
+import FinancieraDetalle from './pages/tenant/FinancieraDetalle';
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route path="/solicitud/:slug" element={<SolicitudPublica />} />
+        <Route path="/solicitud/:token" element={<SolicitudPublica />} />
 
         <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/instituciones" element={<Instituciones />} />
           <Route path="/contratos" element={<Contratos />} />
           <Route path="/contratos/:id" element={<Contrato />} />
+          {/* F1 C5: panel del bufete */}
+          <Route path="/pendientes" element={<Pendientes />} />
+          <Route path="/pendientes/:id" element={<PendienteDetalle />} />
         </Route>
 
         <Route
@@ -62,6 +71,14 @@ export default function App() {
           <Route path="configuracion" element={<TenantConfiguracion />} />
           <Route path="solicitudes" element={<TenantSolicitudes />} />
           <Route path="reportes" element={<TenantReportes />} />
+          {/* F1 C4: módulo Financiera */}
+          <Route path="financiera" element={<Financiera />} />
+          <Route path="financiera/nueva" element={<FinancieraNueva />} />
+          <Route path="financiera/en-curso" element={<FinancieraLista />} />
+          <Route path="financiera/en-revision" element={<FinancieraLista />} />
+          <Route path="financiera/con-bufete" element={<FinancieraLista />} />
+          <Route path="financiera/completadas" element={<FinancieraLista />} />
+          <Route path="financiera/:id" element={<FinancieraDetalle />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />
