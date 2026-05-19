@@ -2,6 +2,8 @@ const express = require('express');
 const crypto = require('crypto');
 const db = require('../db');
 const { authenticate } = require('../middleware/auth');
+const { encrypt, hashFor } = require('../encryption');
+const { normalizeMoney } = require('../utils/money');
 
 const authRouter = express.Router();
 const publicRouter = express.Router();
@@ -95,18 +97,23 @@ publicRouter.post('/solicitud/:slug', (req, res, next) => {
       const info = db
         .prepare(
           `INSERT INTO clientes
-           (institucion_id, nombre, dpi, dpi_scan_path, fecha_nac, lugar_nac, profesion, estado_civil, nit,
-            telefono, email, domicilio, recibo_path, ingresos, empleo, estado, autorizaciones)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pendiente', ?)`
+           (institucion_id, nombre, dpi, dpi_hash, dpi_scan_path, fecha_nac, lugar_nac,
+            profesion, estado_civil, nit, nit_hash, telefono, email, domicilio, recibo_path,
+            ingresos, empleo, estado, autorizaciones)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pendiente', ?)`
         )
         .run(
           inst.id,
-          b.nombre, b.dpi, b.dpi_scan_path || null,
+          b.nombre,
+          encrypt(b.dpi), hashFor('dpi', b.dpi),
+          b.dpi_scan_path || null,
           b.fecha_nac || null, b.lugar_nac || null,
-          b.profesion || null, b.estado_civil || null, b.nit || null,
+          b.profesion || null, b.estado_civil || null,
+          encrypt(b.nit), hashFor('nit', b.nit),
           b.telefono || null, b.email || null,
-          b.domicilio || null, b.recibo_path || null,
-          b.ingresos != null && b.ingresos !== '' ? Number(b.ingresos) : null,
+          encrypt(b.domicilio),
+          b.recibo_path || null,
+          encrypt(normalizeMoney(b.ingresos)),
           b.empleo || null,
           autorizaciones
         );

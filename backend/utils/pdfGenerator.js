@@ -1,15 +1,27 @@
 const crypto = require('crypto');
 const db = require('../db');
 const { compilarContrato, generarHTML, generarPDF } = require('../contrato-engine');
+const { decrypt } = require('../encryption');
+
+function decryptJsonField(value, label) {
+  if (value === null || value === undefined || value === '') return {};
+  try {
+    return JSON.parse(decrypt(value));
+  } catch (e) {
+    console.error(`[pdfGenerator] decrypt+parse fallo en ${label}: ${e.message}`);
+    return {};
+  }
+}
 
 async function generatePdf(contratoId) {
   const row = db.prepare('SELECT * FROM contratos WHERE id = ?').get(contratoId);
   if (!row) throw Object.assign(new Error('Contrato no encontrado'), { status: 404 });
 
   const datos = {
-    datos_cliente: row.datos_cliente ? JSON.parse(row.datos_cliente) : {},
+    // datos_cliente y datos_garantia están encriptados (AES-GCM); el resto no.
+    datos_cliente: decryptJsonField(row.datos_cliente, `contrato ${contratoId} datos_cliente`),
     datos_credito: row.datos_credito ? JSON.parse(row.datos_credito) : {},
-    datos_garantia: row.datos_garantia ? JSON.parse(row.datos_garantia) : {},
+    datos_garantia: decryptJsonField(row.datos_garantia, `contrato ${contratoId} datos_garantia`),
     datos_firmas: row.datos_firmas ? JSON.parse(row.datos_firmas) : {},
     no_contrato: row.no_contrato,
   };

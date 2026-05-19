@@ -20,7 +20,7 @@ const CLAUSULAS = [
     obligatoria: 1,
     titulo: 'Cláusula Primera — Monto y Objeto',
     texto_base:
-      'El Banco concede a El Deudor un crédito por la suma de {{moneda}} {{monto}} ({{monto_letras}}), destinado a: {{destino}}. Los fondos serán entregados mediante {{forma_desembolso}}.',
+      'El Banco concede a El Deudor un crédito por la suma de {{monto}} ({{monto_letras}}), destinado a: {{destino}}. Los fondos serán entregados mediante {{forma_desembolso}}.',
     variables: ['moneda','monto','monto_letras','destino','forma_desembolso'],
   },
   {
@@ -38,7 +38,7 @@ const CLAUSULAS = [
     obligatoria: 1,
     titulo: 'Cláusula Tercera — Forma de Pago',
     texto_base:
-      'El Deudor se obliga a pagar mediante {{sistema_amort}}, cuotas de {{moneda}} {{cuota_mensual}}, pagadero entre el día {{dia_pago_inicio}} y el día {{dia_pago_fin}} de cada mes, mediante {{tipo_pago}}{{cuenta_clause}}.',
+      'El Deudor se obliga a pagar mediante {{sistema_amort}}, cuotas de {{cuota_mensual}}, pagadero entre el día {{dia_pago_inicio}} y el día {{dia_pago_fin}} de cada mes, mediante {{tipo_pago}}{{cuenta_clause}}.',
     variables: ['sistema_amort','cuota_mensual','dia_pago_inicio','dia_pago_fin','tipo_pago','cuenta_clause','moneda'],
   },
   {

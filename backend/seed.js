@@ -1,5 +1,7 @@
 const bcrypt = require('bcryptjs');
 const db = require('./db');
+const { encrypt, hashFor } = require('./encryption');
+const { normalizeMoney } = require('./utils/money');
 
 const ADMIN = {
   email: 'admin@lexdocs.gt',
@@ -50,7 +52,7 @@ const CLAUSULAS = [
     obligatoria: 1,
     variables: ['monto', 'monto_letras'],
     texto_base:
-      'EL ACREEDOR otorga a EL DEUDOR un crédito por la cantidad de Q{{monto}} ({{monto_letras}} quetzales exactos), suma que EL DEUDOR declara recibir a su entera satisfacción.',
+      'EL ACREEDOR otorga a EL DEUDOR un crédito por la cantidad de {{monto}} ({{monto_letras}} quetzales exactos), suma que EL DEUDOR declara recibir a su entera satisfacción.',
   },
   {
     codigo: 'segunda-plazo',
@@ -68,7 +70,7 @@ const CLAUSULAS = [
     obligatoria: 1,
     variables: ['cuota', 'dia_pago', 'cuenta'],
     texto_base:
-      'EL DEUDOR se obliga a pagar el capital e intereses mediante cuotas mensuales, iguales y consecutivas de Q{{cuota}}, pagaderas el día {{dia_pago}} de cada mes, en la cuenta No. {{cuenta}} de EL ACREEDOR.',
+      'EL DEUDOR se obliga a pagar el capital e intereses mediante cuotas mensuales, iguales y consecutivas de {{cuota}}, pagaderas el día {{dia_pago}} de cada mes, en la cuenta No. {{cuenta}} de EL ACREEDOR.',
   },
   {
     codigo: 'cuarta-intereses',
@@ -138,11 +140,16 @@ function run() {
       .prepare('SELECT id FROM instituciones WHERE slug = ?')
       .get(INSTITUCION.slug);
 
+    // representantes.dpi se guarda encriptado
     db.prepare(
       `INSERT OR IGNORE INTO representantes
        (institucion_id, nombre, dpi, cargo, escritura_no, escritura_fecha, notario_escritura, vencimiento)
        VALUES (@institucion_id, @nombre, @dpi, @cargo, @escritura_no, @escritura_fecha, @notario_escritura, @vencimiento)`
-    ).run({ institucion_id: institucion.id, ...REPRESENTANTE });
+    ).run({
+      institucion_id: institucion.id,
+      ...REPRESENTANTE,
+      dpi: encrypt(REPRESENTANTE.dpi),
+    });
 
     const codigos = CLAUSULAS.map((c) => c.codigo);
     db.prepare(
@@ -179,13 +186,33 @@ function run() {
       { nombre: 'María Fernanda López Soto', dpi: '5678 12345 0102', nit: '9988776', estado_civil: 'soltera', profesion: 'Contadora pública', domicilio: '12 avenida 3-21 zona 1, Quetzaltenango', fecha_nac: '1990-11-22', lugar_nac: 'Quetzaltenango', telefono: '5555-9988', email: 'mflopez@example.gt', ingresos: 14200, empleo: 'Despacho López & Asociados' },
       { nombre: 'José Antonio Méndez Ramírez', dpi: '8765 43210 0103', nit: '1122334', estado_civil: 'union de hecho', profesion: 'Médico cirujano', domicilio: '7a avenida 8-15 zona 14, Ciudad de Guatemala', fecha_nac: '1978-07-04', lugar_nac: 'Antigua Guatemala', telefono: '5555-1122', email: 'dr.mendez@example.gt', ingresos: 32000, empleo: 'Hospital Centro Médico' },
     ];
+    // clientes: campos sensibles (dpi, nit, domicilio, ingresos) encriptados;
+    // dpi y nit también con hash HMAC para búsqueda exacta.
     const insCliente = db.prepare(
       `INSERT OR IGNORE INTO clientes
-       (institucion_id, nombre, dpi, nit, estado_civil, profesion, domicilio, fecha_nac, lugar_nac, telefono, email, ingresos, empleo)
-       VALUES (@institucion_id,@nombre,@dpi,@nit,@estado_civil,@profesion,@domicilio,@fecha_nac,@lugar_nac,@telefono,@email,@ingresos,@empleo)`
+       (institucion_id, nombre, dpi, dpi_hash, nit, nit_hash, estado_civil, profesion,
+        domicilio, fecha_nac, lugar_nac, telefono, email, ingresos, empleo)
+       VALUES (@institucion_id,@nombre,@dpi,@dpi_hash,@nit,@nit_hash,@estado_civil,@profesion,
+               @domicilio,@fecha_nac,@lugar_nac,@telefono,@email,@ingresos,@empleo)`
     );
     for (const c of sampleClientes) {
-      insCliente.run({ institucion_id: institucion.id, ...c });
+      insCliente.run({
+        institucion_id: institucion.id,
+        nombre: c.nombre,
+        dpi: encrypt(c.dpi),
+        dpi_hash: hashFor('dpi', c.dpi),
+        nit: encrypt(c.nit),
+        nit_hash: hashFor('nit', c.nit),
+        estado_civil: c.estado_civil,
+        profesion: c.profesion,
+        domicilio: encrypt(c.domicilio),
+        fecha_nac: c.fecha_nac,
+        lugar_nac: c.lugar_nac,
+        telefono: c.telefono,
+        email: c.email,
+        ingresos: encrypt(normalizeMoney(c.ingresos)),
+        empleo: c.empleo,
+      });
     }
 
     return { institucion, modelo };

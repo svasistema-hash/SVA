@@ -5,19 +5,68 @@ const crypto = require('crypto');
 const multer = require('multer');
 const db = require('../db');
 const { UPLOADS_PATH } = require('../config');
+const { encrypt, decrypt, hashFor } = require('../encryption');
+const { normalizeMoney } = require('../utils/money');
 
 const router = express.Router();
 
-function scopeWhere(req, alias = 'c') {
-  if (req.user.institucion_id) return { sql: ` AND ${alias}.institucion_id = ?`, params: [req.user.institucion_id] };
-  return { sql: '', params: [] };
+// ──────────────────────────────────────────────────────────────
+// Helpers de encriptación
+// ──────────────────────────────────────────────────────────────
+
+function safeDecrypt(value, fieldName, rowId) {
+  if (value === null || value === undefined) return null;
+  try {
+    return decrypt(value);
+  } catch (e) {
+    console.error(`[decrypt failed] table=clientes field=${fieldName} id=${rowId}: ${e.message}`);
+    return null;
+  }
 }
+
+// Convierte fila cruda de DB → objeto API (descifra columnas sensibles, oculta hashes).
+function clienteFromRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    institucion_id: row.institucion_id,
+    nombre: row.nombre,
+    dpi: safeDecrypt(row.dpi, 'dpi', row.id),
+    dpi_scan_path: row.dpi_scan_path,
+    fecha_nac: row.fecha_nac,
+    lugar_nac: row.lugar_nac,
+    profesion: row.profesion,
+    estado_civil: row.estado_civil,
+    nit: safeDecrypt(row.nit, 'nit', row.id),
+    telefono: row.telefono,
+    email: row.email,
+    domicilio: safeDecrypt(row.domicilio, 'domicilio', row.id),
+    recibo_path: row.recibo_path,
+    ingresos: safeDecrypt(row.ingresos, 'ingresos', row.id), // string canónico "18500.00"
+    empleo: row.empleo,
+    created_at: row.created_at,
+    estado: row.estado,
+    autorizaciones: row.autorizaciones,
+    genero: row.genero,
+    conyuge_nombre: row.conyuge_nombre,
+    conyuge_dpi: safeDecrypt(row.conyuge_dpi, 'conyuge_dpi', row.id),
+    ingresos_rango: row.ingresos_rango,
+    // NUNCA retornar: dpi_hash, nit_hash, conyuge_dpi_hash
+  };
+}
+
+// ──────────────────────────────────────────────────────────────
+// GET /api/clientes — listar (con búsqueda por nombre, dpi o nit)
+// ──────────────────────────────────────────────────────────────
 
 router.get('/', (req, res, next) => {
   try {
     const q = (req.query.q || '').trim();
+    const dpiQuery = (req.query.dpi || '').trim();
+    const nitQuery = (req.query.nit || '').trim();
     const estado = req.query.estado;
     const institucion_id = req.query.institucion_id ? parseInt(req.query.institucion_id, 10) : null;
+
     let sql = 'SELECT * FROM clientes WHERE 1=1';
     const params = [];
     if (req.user.institucion_id) {
@@ -33,17 +82,37 @@ router.get('/', (req, res, next) => {
     } else if (!estado) {
       sql += " AND estado != 'inactivo'";
     }
+    // Búsqueda por nombre (plaintext, LIKE)
     if (q) {
-      sql += ' AND (nombre LIKE ? OR dpi LIKE ? OR nit LIKE ?)';
-      const like = `%${q}%`;
-      params.push(like, like, like);
+      sql += ' AND nombre LIKE ?';
+      params.push(`%${q}%`);
+    }
+    // Búsqueda exacta por DPI o NIT vía hash (índices)
+    if (dpiQuery) {
+      const h = hashFor('dpi', dpiQuery);
+      if (h) {
+        sql += ' AND dpi_hash = ?';
+        params.push(h);
+      }
+    }
+    if (nitQuery) {
+      const h = hashFor('nit', nitQuery);
+      if (h) {
+        sql += ' AND nit_hash = ?';
+        params.push(h);
+      }
     }
     sql += ' ORDER BY created_at DESC LIMIT 100';
-    res.json(db.prepare(sql).all(...params));
+    const rows = db.prepare(sql).all(...params);
+    res.json(rows.map(clienteFromRow));
   } catch (err) {
     next(err);
   }
 });
+
+// ──────────────────────────────────────────────────────────────
+// PUT /api/clientes/:id — actualizar
+// ──────────────────────────────────────────────────────────────
 
 router.put('/:id', (req, res, next) => {
   try {
@@ -52,23 +121,60 @@ router.put('/:id', (req, res, next) => {
     if (req.user.institucion_id && req.user.institucion_id !== row.institucion_id) {
       return res.status(403).json({ error: 'Sin acceso', code: 403 });
     }
-    const allowed = ['nombre','dpi','nit','estado_civil','profesion','domicilio','telefono','email','ingresos','empleo','estado','fecha_nac','lugar_nac','dpi_scan_path','recibo_path','genero','conyuge_nombre','conyuge_dpi','ingresos_rango'];
+
+    const b = req.body || {};
     const updates = [];
     const params = [];
-    for (const k of allowed) {
-      if (req.body && req.body[k] !== undefined) {
+
+    // Campos sensibles (encrypt + hash o solo encrypt)
+    if (b.dpi !== undefined) {
+      updates.push('dpi = ?', 'dpi_hash = ?');
+      params.push(encrypt(b.dpi), hashFor('dpi', b.dpi));
+    }
+    if (b.nit !== undefined) {
+      updates.push('nit = ?', 'nit_hash = ?');
+      params.push(encrypt(b.nit), hashFor('nit', b.nit));
+    }
+    if (b.conyuge_dpi !== undefined) {
+      updates.push('conyuge_dpi = ?', 'conyuge_dpi_hash = ?');
+      params.push(encrypt(b.conyuge_dpi), hashFor('dpi', b.conyuge_dpi));
+    }
+    if (b.domicilio !== undefined) {
+      updates.push('domicilio = ?');
+      params.push(encrypt(b.domicilio));
+    }
+    if (b.ingresos !== undefined) {
+      const norm = normalizeMoney(b.ingresos);
+      updates.push('ingresos = ?');
+      params.push(encrypt(norm));
+    }
+
+    // Campos no sensibles (plaintext directo)
+    const plain = ['nombre', 'estado_civil', 'profesion', 'telefono', 'email', 'empleo',
+                   'estado', 'fecha_nac', 'lugar_nac', 'dpi_scan_path', 'recibo_path',
+                   'genero', 'conyuge_nombre', 'ingresos_rango'];
+    for (const k of plain) {
+      if (b[k] !== undefined) {
         updates.push(`${k} = ?`);
-        params.push(k === 'ingresos' && req.body[k] !== null && req.body[k] !== '' ? Number(req.body[k]) : req.body[k]);
+        params.push(b[k]);
       }
     }
+
     if (!updates.length) return res.status(400).json({ error: 'No hay campos para actualizar', code: 400 });
     params.push(row.id);
     db.prepare(`UPDATE clientes SET ${updates.join(', ')} WHERE id = ?`).run(...params);
-    res.json(db.prepare('SELECT * FROM clientes WHERE id = ?').get(row.id));
+    const updated = db.prepare('SELECT * FROM clientes WHERE id = ?').get(row.id);
+    res.json(clienteFromRow(updated));
   } catch (err) {
+    if (err.code === 'SQLITE_CONSTRAINT_UNIQUE')
+      return res.status(409).json({ error: 'Ya existe un cliente con ese DPI en esta institución', code: 409 });
     next(err);
   }
 });
+
+// ──────────────────────────────────────────────────────────────
+// GET /api/clientes/:id — leer uno
+// ──────────────────────────────────────────────────────────────
 
 router.get('/:id', (req, res, next) => {
   try {
@@ -77,11 +183,15 @@ router.get('/:id', (req, res, next) => {
     if (req.user.institucion_id && req.user.institucion_id !== row.institucion_id) {
       return res.status(403).json({ error: 'Sin acceso', code: 403 });
     }
-    res.json(row);
+    res.json(clienteFromRow(row));
   } catch (err) {
     next(err);
   }
 });
+
+// ──────────────────────────────────────────────────────────────
+// POST /api/clientes — crear
+// ──────────────────────────────────────────────────────────────
 
 router.post('/', (req, res, next) => {
   try {
@@ -93,43 +203,57 @@ router.post('/', (req, res, next) => {
     }
     if (!b.nombre) return res.status(400).json({ error: 'nombre requerido', code: 400 });
 
-    const info = db
-      .prepare(
-        `INSERT INTO clientes
-         (institucion_id, nombre, dpi, dpi_scan_path, fecha_nac, lugar_nac, profesion, estado_civil, nit,
-          telefono, email, domicilio, recibo_path, ingresos, empleo,
-          genero, conyuge_nombre, conyuge_dpi, ingresos_rango, estado)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
-      )
-      .run(
-        institucion_id,
-        b.nombre,
-        b.dpi || null,
-        b.dpi_scan_path || null,
-        b.fecha_nac || null,
-        b.lugar_nac || null,
-        b.profesion || null,
-        b.estado_civil || null,
-        b.nit || null,
-        b.telefono || null,
-        b.email || null,
-        b.domicilio || null,
-        b.recibo_path || null,
-        b.ingresos != null && b.ingresos !== '' ? Number(b.ingresos) : null,
-        b.empleo || null,
-        b.genero || null,
-        b.conyuge_nombre || null,
-        b.conyuge_dpi || null,
-        b.ingresos_rango || null,
-        b.estado || 'activo'
-      );
-    res.status(201).json(db.prepare('SELECT * FROM clientes WHERE id = ?').get(info.lastInsertRowid));
+    const dpiEnc = encrypt(b.dpi);
+    const dpiH = hashFor('dpi', b.dpi);
+    const nitEnc = encrypt(b.nit);
+    const nitH = hashFor('nit', b.nit);
+    const conyDpiEnc = encrypt(b.conyuge_dpi);
+    const conyDpiH = hashFor('dpi', b.conyuge_dpi);
+    const domicilioEnc = encrypt(b.domicilio);
+    const ingresosEnc = encrypt(normalizeMoney(b.ingresos));
+
+    const info = db.prepare(
+      `INSERT INTO clientes
+       (institucion_id, nombre, dpi, dpi_hash, dpi_scan_path, fecha_nac, lugar_nac,
+        profesion, estado_civil, nit, nit_hash, telefono, email, domicilio, recibo_path,
+        ingresos, empleo, genero, conyuge_nombre, conyuge_dpi, conyuge_dpi_hash,
+        ingresos_rango, estado)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      institucion_id,
+      b.nombre,
+      dpiEnc, dpiH,
+      b.dpi_scan_path || null,
+      b.fecha_nac || null,
+      b.lugar_nac || null,
+      b.profesion || null,
+      b.estado_civil || null,
+      nitEnc, nitH,
+      b.telefono || null,
+      b.email || null,
+      domicilioEnc,
+      b.recibo_path || null,
+      ingresosEnc,
+      b.empleo || null,
+      b.genero || null,
+      b.conyuge_nombre || null,
+      conyDpiEnc, conyDpiH,
+      b.ingresos_rango || null,
+      b.estado || 'activo'
+    );
+    const created = db.prepare('SELECT * FROM clientes WHERE id = ?').get(info.lastInsertRowid);
+    res.status(201).json(clienteFromRow(created));
   } catch (err) {
     if (err.code === 'SQLITE_CONSTRAINT_UNIQUE')
-      return res.status(409).json({ error: 'Ya existe un cliente con ese DPI', code: 409 });
+      return res.status(409).json({ error: 'Ya existe un cliente con ese DPI en esta institución', code: 409 });
     next(err);
   }
 });
+
+// ──────────────────────────────────────────────────────────────
+// Uploads (scan-dpi / scan-recibo) — FAKE OCR, sin cambios estructurales.
+// La imagen sube real con nombre UUID; los datos retornados son ficticios.
+// ──────────────────────────────────────────────────────────────
 
 if (!fs.existsSync(UPLOADS_PATH)) fs.mkdirSync(UPLOADS_PATH, { recursive: true });
 

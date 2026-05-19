@@ -19,7 +19,7 @@
       "obligatoria": true,
       "tipos": ["personal", "fiduciaria", "hipotecaria", "prendaria", "mixta"],
       "titulo": "Cláusula Primera — Monto y Objeto",
-      "texto_base": "El Banco concede a El Deudor un crédito por la suma de {{moneda}} {{monto}} ({{monto_letras}}), destinado a: {{destino}}. Los fondos serán entregados mediante {{forma_desembolso}}.",
+      "texto_base": "El Banco concede a El Deudor un crédito por la suma de {{monto}} ({{monto_letras}}), destinado a: {{destino}}. Los fondos serán entregados mediante {{forma_desembolso}}.",
       "variables": ["moneda","monto","monto_letras","destino","forma_desembolso"]
     },
     {
@@ -37,7 +37,7 @@
       "obligatoria": true,
       "tipos": ["hipotecaria", "mixta"],
       "titulo": "Cláusula Tercera — Conservación del Inmueble",
-      "texto_base": "El Deudor se obliga a mantener el inmueble hipotecado en buen estado de conservación, a cubrir oportunamente los impuestos y servicios que afecten al inmueble, y a contratar y mantener vigente seguro contra incendio y daños por un monto no inferior a {{moneda}} {{seguro_inmueble}}, con cesión de derechos a favor del Banco.",
+      "texto_base": "El Deudor se obliga a mantener el inmueble hipotecado en buen estado de conservación, a cubrir oportunamente los impuestos y servicios que afecten al inmueble, y a contratar y mantener vigente seguro contra incendio y daños por un monto no inferior a {{seguro_inmueble}}, con cesión de derechos a favor del Banco.",
       "variables": ["moneda","seguro_inmueble"]
     },
     {
@@ -46,7 +46,7 @@
       "obligatoria": true,
       "tipos": ["prendaria", "mixta"],
       "titulo": "Cláusula Segunda — Descripción del Bien Prendario",
-      "texto_base": "Para garantizar el crédito, El Deudor entrega en prenda sin desplazamiento el siguiente bien: {{tipo_bien}}, marca {{marca_bien}}, modelo {{modelo_bien}}, año {{anio_bien}}, serie {{serie_bien}}, placa {{placa_bien}}, color {{color_bien}}, con un valor comercial estimado de {{moneda}} {{valor_bien}}.",
+      "texto_base": "Para garantizar el crédito, El Deudor entrega en prenda sin desplazamiento el siguiente bien: {{tipo_bien}}, marca {{marca_bien}}, modelo {{modelo_bien}}, año {{anio_bien}}, serie {{serie_bien}}, placa {{placa_bien}}, color {{color_bien}}, con un valor comercial estimado de {{valor_bien}}.",
       "variables": ["tipo_bien","marca_bien","modelo_bien","anio_bien","serie_bien","placa_bien","color_bien","moneda","valor_bien"]
     },
     {
@@ -64,7 +64,7 @@
       "obligatoria": true,
       "tipos": ["personal", "fiduciaria", "hipotecaria", "prendaria", "mixta"],
       "titulo": "Cláusula de Forma de Pago",
-      "texto_base": "El Deudor se obliga a pagar mediante {{sistema_amort}}, cuotas de {{moneda}} {{cuota_mensual}}, pagadero entre el día {{dia_pago_inicio}} y el día {{dia_pago_fin}} de cada mes, mediante {{tipo_pago}}{{cuenta_clause}}.",
+      "texto_base": "El Deudor se obliga a pagar mediante {{sistema_amort}}, cuotas de {{cuota_mensual}}, pagadero entre el día {{dia_pago_inicio}} y el día {{dia_pago_fin}} de cada mes, mediante {{tipo_pago}}{{cuenta_clause}}.",
       "variables": ["sistema_amort","cuota_mensual","dia_pago_inicio","dia_pago_fin","tipo_pago","cuenta_clause","moneda"]
     },
     {

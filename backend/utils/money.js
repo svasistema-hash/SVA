@@ -9,4 +9,13 @@ function normalizeMoney(value) {
   return n.toFixed(2);
 }
 
-module.exports = { normalizeMoney };
+// Formato de presentación (PDF/UI): "Q18,500.00".
+// Acepta los mismos inputs que normalizeMoney; devuelve null si no parsea.
+function formatQuetzal(v) {
+  const canonical = normalizeMoney(v);
+  if (canonical === null) return null;
+  const n = parseFloat(canonical);
+  return 'Q' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+module.exports = { normalizeMoney, formatQuetzal };

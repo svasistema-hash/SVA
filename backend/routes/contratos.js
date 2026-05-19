@@ -5,17 +5,34 @@ const db = require('../db');
 const { generatePdf } = require('../utils/pdfGenerator');
 const { nextCorrelativo, compilarContrato } = require('../contrato-engine');
 const { PDFS_PATH } = require('../config');
+const { encrypt, decrypt } = require('../encryption');
 
 const router = express.Router();
+
+// datos_cliente y datos_garantia se guardan como JSON encriptado (AES-GCM);
+// datos_credito y datos_firmas en JSON plaintext. Estos helpers manejan ambas variantes.
+function decryptJson(value, label) {
+  if (value === null || value === undefined || value === '') return null;
+  try {
+    return JSON.parse(decrypt(value));
+  } catch (e) {
+    console.error(`[contratos decrypt+parse failed] ${label}: ${e.message}`);
+    return null;
+  }
+}
+function parsePlainJson(value) {
+  if (value === null || value === undefined || value === '') return null;
+  try { return JSON.parse(value); } catch { return null; }
+}
 
 function parseJsonFields(row) {
   if (!row) return row;
   return {
     ...row,
-    datos_cliente: row.datos_cliente ? JSON.parse(row.datos_cliente) : null,
-    datos_credito: row.datos_credito ? JSON.parse(row.datos_credito) : null,
-    datos_garantia: row.datos_garantia ? JSON.parse(row.datos_garantia) : null,
-    datos_firmas: row.datos_firmas ? JSON.parse(row.datos_firmas) : null,
+    datos_cliente: decryptJson(row.datos_cliente, `contrato ${row.id} datos_cliente`),
+    datos_credito: parsePlainJson(row.datos_credito),
+    datos_garantia: decryptJson(row.datos_garantia, `contrato ${row.id} datos_garantia`),
+    datos_firmas: parsePlainJson(row.datos_firmas),
   };
 }
 
@@ -91,9 +108,9 @@ router.post('/', (req, res, next) => {
         institucion_id,
         modelo_id,
         noContrato,
-        datos_cliente ? JSON.stringify(datos_cliente) : null,
+        datos_cliente ? encrypt(JSON.stringify(datos_cliente)) : null,
         datos_credito ? JSON.stringify(datos_credito) : null,
-        datos_garantia ? JSON.stringify(datos_garantia) : null,
+        datos_garantia ? encrypt(JSON.stringify(datos_garantia)) : null,
         datos_firmas ? JSON.stringify(datos_firmas) : null
       );
     const row = db.prepare('SELECT * FROM contratos WHERE id = ?').get(info.lastInsertRowid);
@@ -113,10 +130,10 @@ router.post('/:id/compilar', (req, res, next) => {
       return res.status(403).json({ error: 'Sin acceso', code: 403 });
     }
     const datos = {
-      datos_cliente: row.datos_cliente ? JSON.parse(row.datos_cliente) : {},
-      datos_credito: row.datos_credito ? JSON.parse(row.datos_credito) : {},
-      datos_garantia: row.datos_garantia ? JSON.parse(row.datos_garantia) : {},
-      datos_firmas: row.datos_firmas ? JSON.parse(row.datos_firmas) : {},
+      datos_cliente: decryptJson(row.datos_cliente, `contrato ${row.id} datos_cliente`) || {},
+      datos_credito: parsePlainJson(row.datos_credito) || {},
+      datos_garantia: decryptJson(row.datos_garantia, `contrato ${row.id} datos_garantia`) || {},
+      datos_firmas: parsePlainJson(row.datos_firmas) || {},
       no_contrato: row.no_contrato,
     };
     const compilado = compilarContrato(row.modelo_id, datos);
@@ -145,10 +162,20 @@ router.get('/:id', (req, res, next) => {
     const fiadores = db
       .prepare('SELECT * FROM fiadores WHERE contrato_id = ?')
       .all(row.id)
-      .map((f) => ({
-        ...f,
-        datos_garantia: f.datos_garantia ? JSON.parse(f.datos_garantia) : null,
-      }));
+      .map((f) => {
+        let dpi = null;
+        if (f.dpi) {
+          try { dpi = decrypt(f.dpi); }
+          catch (e) { console.error(`[fiador dpi decrypt failed] id=${f.id}: ${e.message}`); }
+        }
+        // No exponer dpi_hash en la respuesta
+        const { dpi_hash, ...rest } = f;
+        return {
+          ...rest,
+          dpi,
+          datos_garantia: f.datos_garantia ? JSON.parse(f.datos_garantia) : null,
+        };
+      });
     res.json({ ...parseJsonFields(row), fiadores });
   } catch (err) {
     next(err);
@@ -164,11 +191,12 @@ router.put('/:id', (req, res, next) => {
     }
     const updates = [];
     const params = [];
+    // datos_cliente y datos_garantia van encriptados; el resto en plaintext.
     const map = {
       estado: (v) => v,
-      datos_cliente: (v) => JSON.stringify(v),
+      datos_cliente: (v) => encrypt(JSON.stringify(v)),
       datos_credito: (v) => JSON.stringify(v),
-      datos_garantia: (v) => JSON.stringify(v),
+      datos_garantia: (v) => encrypt(JSON.stringify(v)),
       datos_firmas: (v) => JSON.stringify(v),
     };
     for (const [k, transform] of Object.entries(map)) {

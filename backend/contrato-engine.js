@@ -2,6 +2,8 @@ const path = require('path');
 const fs = require('fs');
 const db = require('./db');
 const { PDFS_PATH } = require('./config');
+const { decrypt } = require('./encryption');
+const { formatQuetzal } = require('./utils/money');
 const {
   PAGE_WIDTH,
   PAGE_HEIGHT,
@@ -13,6 +15,27 @@ const {
 } = require('../shared/legal/formato-oficio');
 const CLAUSULAS_BASE = require('../shared/legal/clausulas-base.json');
 
+// Variables que SIEMPRE se renderizan como moneda formateada (ej. "Q18,500.00").
+// Si se agrega una variable monetaria futura, sumarla acá.
+const MONETARY_VARS = new Set([
+  'monto',
+  'cuota_mensual',
+  'seguro_inmueble',
+  'valor_bien',
+  'ingresos',
+  'valor_garantia',
+]);
+
+function safeDecrypt(value, label) {
+  if (value === null || value === undefined || value === '') return null;
+  try {
+    return decrypt(value);
+  } catch (e) {
+    console.error(`[engine decrypt failed] ${label}: ${e.message}`);
+    return null;
+  }
+}
+
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
@@ -21,8 +44,12 @@ function escapeHtml(s) {
 
 function interpolate(text, vars) {
   return String(text).replace(/\{\{(\w+)\}\}/g, (_, k) => {
-    const v = vars[k];
-    return v !== undefined && v !== null && v !== '' ? String(v) : `__MISSING__${k}__`;
+    const raw = vars[k];
+    if (MONETARY_VARS.has(k)) {
+      const formatted = formatQuetzal(raw);
+      return formatted !== null ? formatted : `__MISSING__${k}__`;
+    }
+    return raw !== undefined && raw !== null && raw !== '' ? String(raw) : `__MISSING__${k}__`;
   });
 }
 
@@ -145,6 +172,9 @@ function buildVars({ representante, cliente, credito, garantia, firmas }) {
     cl_domicilio: cliente?.domicilio || '',
     cl_dpi: cliente?.dpi || '',
     cl_nit: cliente?.nit || '',
+    /** @deprecated `{{moneda}}` ya no se usa en templates oficiales; formatQuetzal
+     *  inyecta "Q" en variables monetarias (MONETARY_VARS). Se conserva por
+     *  compatibilidad con templates legacy de tenants. */
     moneda: credito?.moneda || 'Q',
     monto: credito?.monto || '',
     monto_letras: credito?.monto_letras || '',
@@ -167,6 +197,11 @@ function buildVars({ representante, cliente, credito, garantia, firmas }) {
     cuotas_incumplimiento: credito?.cuotas_incumplimiento || '',
     causales_vencimiento: credito?.causales_vencimiento || '',
     via_cobro: credito?.via_cobro || '',
+    // Variables monetarias futuras (registradas en MONETARY_VARS):
+    seguro_inmueble: garantia?.hipoteca?.seguro_inmueble || '',
+    valor_bien: garantia?.prenda?.valor_bien || '',
+    valor_garantia: garantia?.valor_garantia || '',
+    ingresos: cliente?.ingresos || '',
   };
 }
 
@@ -178,6 +213,10 @@ function compilarContrato(modelo_id, datos) {
   const representante = db
     .prepare('SELECT * FROM representantes WHERE institucion_id = ? AND activo = 1 LIMIT 1')
     .get(institucion.id);
+  // representantes.dpi está encriptado en DB; descifrarlo antes de armar el contexto.
+  if (representante) {
+    representante.dpi = safeDecrypt(representante.dpi, `representante.dpi id=${representante.id}`);
+  }
   const clausulasRaw = db
     .prepare('SELECT * FROM clausulas WHERE modelo_id = ? ORDER BY orden')
     .all(modelo_id);
