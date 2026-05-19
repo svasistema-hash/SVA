@@ -7,7 +7,7 @@ import SelectorTipoPersona from '../../components/SelectorTipoPersona';
 import { tenantBreadcrumb } from '../../utils/breadcrumb';
 import { listClientes } from '../../api/clientes';
 import { fetchContratos } from '../../api/contratos';
-import { crearToken } from '../../api/solicitudes';
+import { crearTokenInstitucion as crearToken } from '../../api/solicitudes';
 
 // Tabs y conteos
 const TABS = [

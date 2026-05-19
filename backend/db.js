@@ -202,6 +202,8 @@ db.exec(`
     dpi_fisico_recibido INTEGER NOT NULL DEFAULT 0,
     dpi_fisico_recibido_por INTEGER REFERENCES users(id),
     dpi_fisico_recibido_at TEXT,
+    -- F1 C3: borrador del wizard público del cliente (JSON serializado).
+    datos_borrador TEXT,
     UNIQUE (institucion_id, no_contrato)
   );
   CREATE INDEX IF NOT EXISTS idx_contratos_inst ON contratos(institucion_id);
@@ -253,6 +255,19 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_tokens_token ON solicitudes_tokens(token);
   CREATE INDEX IF NOT EXISTS idx_tokens_inst ON solicitudes_tokens(institucion_id, usado);
 
+  -- F1 C3: tokens públicos por contrato (link del cliente, 48h).
+  CREATE TABLE IF NOT EXISTS contratos_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    contrato_id INTEGER NOT NULL REFERENCES contratos(id) ON DELETE CASCADE,
+    token TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    usado INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    created_by INTEGER REFERENCES users(id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_contratos_tokens_token ON contratos_tokens(token);
+  CREATE INDEX IF NOT EXISTS idx_contratos_tokens_contrato ON contratos_tokens(contrato_id);
+
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT NOT NULL UNIQUE,
@@ -300,6 +315,7 @@ if (!contratosCols.includes('completado_at'))            db.exec("ALTER TABLE co
 if (!contratosCols.includes('dpi_fisico_recibido'))      db.exec("ALTER TABLE contratos ADD COLUMN dpi_fisico_recibido INTEGER NOT NULL DEFAULT 0");
 if (!contratosCols.includes('dpi_fisico_recibido_por'))  db.exec("ALTER TABLE contratos ADD COLUMN dpi_fisico_recibido_por INTEGER REFERENCES users(id)");
 if (!contratosCols.includes('dpi_fisico_recibido_at'))   db.exec("ALTER TABLE contratos ADD COLUMN dpi_fisico_recibido_at TEXT");
+if (!contratosCols.includes('datos_borrador'))           db.exec("ALTER TABLE contratos ADD COLUMN datos_borrador TEXT");
 
 const clientesCols = db.prepare('PRAGMA table_info(clientes)').all().map((c) => c.name);
 if (!clientesCols.includes('estado')) db.exec("ALTER TABLE clientes ADD COLUMN estado TEXT NOT NULL DEFAULT 'activo'");

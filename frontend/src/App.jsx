@@ -28,7 +28,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route path="/solicitud/:slug" element={<SolicitudPublica />} />
+        <Route path="/solicitud/:token" element={<SolicitudPublica />} />
 
         <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
           <Route path="/" element={<Dashboard />} />

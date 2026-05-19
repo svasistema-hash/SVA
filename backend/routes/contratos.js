@@ -83,6 +83,34 @@ router.get('/next-correlativo', (req, res, next) => {
   }
 });
 
+// F1 C3: genera token público para que el cliente complete sus datos vía portal.
+// Token vive 48h. Se puede regenerar (anula los anteriores no usados del mismo contrato).
+router.post('/:id/token-cliente', (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const contrato = db.prepare('SELECT id, institucion_id, estado FROM contratos WHERE id = ?').get(id);
+    if (!contrato) return res.status(404).json({ error: 'Contrato no encontrado', code: 404 });
+    if (req.user.institucion_id && req.user.institucion_id !== contrato.institucion_id) {
+      return res.status(403).json({ error: 'Sin acceso a este contrato', code: 403 });
+    }
+    if (contrato.estado !== 'en_curso') {
+      return res.status(409).json({
+        error: `No se puede generar link de cliente cuando el contrato está en estado '${contrato.estado}'`,
+        code: 409,
+      });
+    }
+    const token = crypto.randomUUID();
+    const expires = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+    db.prepare(
+      `INSERT INTO contratos_tokens (contrato_id, token, expires_at, created_by) VALUES (?, ?, ?, ?)`
+    ).run(contrato.id, token, expires, req.user.userId || null);
+    audit(req, 'generar_token_cliente', 'contrato', contrato.id, { expires_at: expires });
+    res.status(201).json({ token, expires_at: expires, url_path: `/solicitud/${token}` });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post('/', (req, res, next) => {
   try {
     const { institucion_id, modelo_id, datos_cliente, datos_credito, datos_garantia, datos_firmas, no_contrato } =

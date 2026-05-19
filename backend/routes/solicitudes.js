@@ -1,23 +1,26 @@
 const express = require('express');
+const path = require('path');
+const fs = require('fs');
 const crypto = require('crypto');
+const multer = require('multer');
 const db = require('../db');
 const { authenticate } = require('../middleware/auth');
 const { encrypt, hashFor } = require('../encryption');
 const { normalizeMoney } = require('../utils/money');
+const { UPLOADS_PATH } = require('../config');
+const ocr = require('../utils/ocr');
+const { parseDPI } = require('../utils/dpi-parser');
+const { parseRecibo } = require('../utils/recibo-parser');
+const { audit, auditAnonimo } = require('../utils/audit');
 
 const authRouter = express.Router();
 const publicRouter = express.Router();
 
-const FAKE_DPI = [
-  { nombre: 'Juan Carlos Pérez García', dpi: '1234 56789 0101', fecha_nac: '1985-03-15', lugar_nac: 'Guatemala' },
-  { nombre: 'María Fernanda López Soto', dpi: '5678 12345 0102', fecha_nac: '1990-11-22', lugar_nac: 'Quetzaltenango' },
-  { nombre: 'José Antonio Méndez Ramírez', dpi: '8765 43210 0103', fecha_nac: '1978-07-04', lugar_nac: 'Antigua Guatemala' },
-];
-const FAKE_DOMICILIO = [
-  '5a calle 4-50 zona 10, Ciudad de Guatemala',
-  '12 avenida 3-21 zona 1, Quetzaltenango',
-  'Lote 42, Colonia Vista Hermosa, Mixco',
-];
+// ──────────────────────────────────────────────────────────────
+// AUTH (legacy): tokens por institución para portal de "registro de cliente
+// suelto". Se mantienen funcionales para la página tenant/Solicitudes.jsx.
+// El flujo nuevo (F1 C3) usa contratos_tokens, no estos.
+// ──────────────────────────────────────────────────────────────
 
 function canAccessInst(user, instId) {
   if (user.role === 'admin' && !user.institucion_id) return true;
@@ -55,93 +58,230 @@ authRouter.get('/api/instituciones/:slug/solicitudes/tokens', authenticate, (req
   }
 });
 
-publicRouter.get('/solicitud/:slug', (req, res, next) => {
+// ──────────────────────────────────────────────────────────────
+// PUBLIC (F1 C3): portal del cliente vinculado a un contrato.
+//
+// Flujo:
+//   GET  /solicitud/:token            → valida token, devuelve estado + borrador
+//   PUT  /solicitud/:token/datos      → guarda datos_borrador (silencioso)
+//   POST /solicitud/:token/dpi        → sube DPI + OCR
+//   POST /solicitud/:token/recibo     → sube recibo + OCR
+//   POST /solicitud/:token/confirmar  → marca token usado, contrato → revision_tenant
+//
+// Validación común:
+//   token existe, no usado, no vencido, contrato en estado 'en_curso'.
+// ──────────────────────────────────────────────────────────────
+
+// Multer storage (mismo patrón que en clientes.js, ya hay carpeta uploads creada).
+if (!fs.existsSync(UPLOADS_PATH)) fs.mkdirSync(UPLOADS_PATH, { recursive: true });
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOADS_PATH),
+  filename: (req, file, cb) => {
+    const hash = crypto.randomBytes(16).toString('hex');
+    const ext = path.extname(file.originalname || '').toLowerCase() || '.bin';
+    cb(null, `${Date.now()}-${hash}${ext}`);
+  },
+});
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype.startsWith('image/'))
+      return cb(Object.assign(new Error('Solo se permiten imágenes'), { status: 400 }));
+    cb(null, true);
+  },
+});
+
+// Resuelve token → { token_row, contrato, institucion } o devuelve respuesta de error.
+// status: 'ok' | 'no-existe' | 'vencido' | 'usado' | 'contrato-no-abierto'
+function resolverToken(token) {
+  const t = db.prepare('SELECT * FROM contratos_tokens WHERE token = ?').get(token);
+  if (!t) return { status: 'no-existe' };
+  if (t.usado) return { status: 'usado' };
+  if (new Date(t.expires_at).getTime() < Date.now()) return { status: 'vencido' };
+
+  const contrato = db.prepare('SELECT * FROM contratos WHERE id = ?').get(t.contrato_id);
+  if (!contrato) return { status: 'no-existe' };
+  if (contrato.estado !== 'en_curso') return { status: 'contrato-no-abierto', estado: contrato.estado };
+
+  const inst = db
+    .prepare('SELECT id, slug, nombre, tipo FROM instituciones WHERE id = ?')
+    .get(contrato.institucion_id);
+  const modelo = db
+    .prepare('SELECT id, nombre, tipo_garantia FROM modelos WHERE id = ?')
+    .get(contrato.modelo_id);
+  return { status: 'ok', token_row: t, contrato, institucion: inst, modelo };
+}
+
+function jsonError(res, status, code, mensaje) {
+  return res.status(status).json({ error: mensaje, code });
+}
+
+function manejarErrorToken(res, r) {
+  if (r.status === 'no-existe') return jsonError(res, 404, 'token_no_existe', 'Link no válido');
+  if (r.status === 'vencido') return jsonError(res, 410, 'token_vencido', 'Link vencido');
+  if (r.status === 'usado') return jsonError(res, 410, 'token_usado', 'Solicitud ya enviada');
+  if (r.status === 'contrato-no-abierto')
+    return jsonError(res, 409, 'contrato_no_abierto', `El contrato está en estado '${r.estado}'`);
+}
+
+// GET /solicitud/:token — valida y devuelve estado actual + borrador.
+publicRouter.get('/solicitud/:token', (req, res, next) => {
   try {
-    const token = req.query.token;
-    if (!token) return res.status(400).json({ error: 'token requerido', code: 400 });
-    const inst = db.prepare('SELECT id, slug, nombre, tipo FROM instituciones WHERE slug = ?').get(req.params.slug);
-    if (!inst) return res.status(404).json({ error: 'Institución no encontrada', code: 404 });
-    const t = db.prepare('SELECT * FROM solicitudes_tokens WHERE token = ? AND institucion_id = ?').get(token, inst.id);
-    if (!t) return res.status(404).json({ error: 'Token inválido', code: 404 });
-    if (t.usado) return res.status(410).json({ error: 'Token ya utilizado', code: 410 });
-    if (new Date(t.expires_at).getTime() < Date.now())
-      return res.status(410).json({ error: 'Token expirado', code: 410 });
-    res.json({ institucion: inst, expires_at: t.expires_at });
+    const r = resolverToken(req.params.token);
+    if (r.status !== 'ok') return manejarErrorToken(res, r);
+    let borrador = null;
+    if (r.contrato.datos_borrador) {
+      try { borrador = JSON.parse(r.contrato.datos_borrador); } catch (_) { borrador = null; }
+    }
+    res.json({
+      institucion: {
+        nombre: r.institucion.nombre,
+        tipo: r.institucion.tipo,
+      },
+      contrato: {
+        id: r.contrato.id,
+        no_contrato: r.contrato.no_contrato,
+        estado: r.contrato.estado,
+      },
+      modelo: r.modelo ? {
+        nombre: r.modelo.nombre,
+        tipo_garantia: r.modelo.tipo_garantia,
+      } : null,
+      expires_at: r.token_row.expires_at,
+      borrador,
+    });
   } catch (err) {
     next(err);
   }
 });
 
-publicRouter.post('/solicitud/:slug', (req, res, next) => {
+// PUT /solicitud/:token/datos — guarda borrador (silencioso).
+publicRouter.put('/solicitud/:token/datos', (req, res, next) => {
   try {
-    const token = req.query.token || req.body?.token;
-    if (!token) return res.status(400).json({ error: 'token requerido', code: 400 });
-    const inst = db.prepare('SELECT id FROM instituciones WHERE slug = ?').get(req.params.slug);
-    if (!inst) return res.status(404).json({ error: 'Institución no encontrada', code: 404 });
-    const t = db.prepare('SELECT * FROM solicitudes_tokens WHERE token = ? AND institucion_id = ?').get(token, inst.id);
-    if (!t) return res.status(404).json({ error: 'Token inválido', code: 404 });
-    if (t.usado) return res.status(410).json({ error: 'Token ya utilizado', code: 410 });
-    if (new Date(t.expires_at).getTime() < Date.now())
-      return res.status(410).json({ error: 'Token expirado', code: 410 });
+    const r = resolverToken(req.params.token);
+    if (r.status !== 'ok') return manejarErrorToken(res, r);
+    const datos = req.body || {};
+    // Sanity: tamaño máximo del JSON (evita abuse). 200KB es generoso para 7 pasos.
+    const serializado = JSON.stringify(datos);
+    if (serializado.length > 200 * 1024) {
+      return jsonError(res, 413, 'datos_demasiado_grandes', 'Datos exceden el tamaño máximo permitido');
+    }
+    db.prepare('UPDATE contratos SET datos_borrador = ? WHERE id = ?').run(serializado, r.contrato.id);
+    res.json({ ok: true, guardado_en: new Date().toISOString() });
+  } catch (err) {
+    next(err);
+  }
+});
 
-    const b = req.body || {};
-    if (!b.nombre || !b.dpi) return res.status(400).json({ error: 'Nombre y DPI requeridos', code: 400 });
+// POST /solicitud/:token/dpi — sube DPI, corre OCR.
+publicRouter.post('/solicitud/:token/dpi', upload.single('imagen'), async (req, res, next) => {
+  try {
+    const r = resolverToken(req.params.token);
+    if (r.status !== 'ok') {
+      if (req.file) fs.promises.unlink(req.file.path).catch(() => {});
+      return manejarErrorToken(res, r);
+    }
+    if (!req.file) return jsonError(res, 400, 'archivo_requerido', 'Archivo requerido (campo "imagen")');
 
-    const autorizaciones = JSON.stringify({
-      datos_veridicos: !!b.confirmaDatos,
-      verificacion_referencias: !!b.autorizaReferencias,
-      timestamp: new Date().toISOString(),
+    const filename = path.basename(req.file.path);
+    const { text, confidence } = await ocr.recognize(req.file.path);
+    const parsed = parseDPI(text);
+
+    let warning = null;
+    if (confidence < 30) {
+      warning = 'La foto no se ve clara. Intente con mejor luz o sin reflejos.';
+    } else if (confidence < 50 || !parsed.dpi) {
+      warning = 'Verifique que los datos extraídos estén correctos.';
+    }
+
+    res.json({
+      confidence,
+      dpi: parsed.dpi,
+      nombre: parsed.nombre,
+      fecha_nac: parsed.fecha_nac,
+      lugar_nac: parsed.lugar_nac,
+      raw_text: text,
+      dpi_scan_path: filename,
+      warning,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /solicitud/:token/recibo — sube recibo de servicios, OCR para dirección.
+publicRouter.post('/solicitud/:token/recibo', upload.single('imagen'), async (req, res, next) => {
+  try {
+    const r = resolverToken(req.params.token);
+    if (r.status !== 'ok') {
+      if (req.file) fs.promises.unlink(req.file.path).catch(() => {});
+      return manejarErrorToken(res, r);
+    }
+    if (!req.file) return jsonError(res, 400, 'archivo_requerido', 'Archivo requerido (campo "imagen")');
+
+    const filename = path.basename(req.file.path);
+    const { text, confidence } = await ocr.recognize(req.file.path);
+    const parsed = parseRecibo(text);
+
+    let warning = null;
+    if (confidence < 30) {
+      warning = 'La foto no se ve clara. Intente con mejor luz o sin reflejos.';
+    } else if (confidence < 50 || !parsed.direccion) {
+      warning = 'Verifique que la dirección extraída esté correcta.';
+    }
+
+    res.json({
+      confidence,
+      domicilio: parsed.direccion,
+      comprobante: parsed.comprobante,
+      raw_text: text,
+      recibo_path: filename,
+      warning,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /solicitud/:token/confirmar — marca token usado, contrato → revision_tenant.
+publicRouter.post('/solicitud/:token/confirmar', (req, res, next) => {
+  try {
+    const r = resolverToken(req.params.token);
+    if (r.status !== 'ok') return manejarErrorToken(res, r);
+
+    // Guarda último estado del borrador si viene en el body.
+    const datos = req.body || {};
+    const serializado = JSON.stringify(datos);
+    if (serializado.length > 200 * 1024) {
+      return jsonError(res, 413, 'datos_demasiado_grandes', 'Datos exceden el tamaño máximo permitido');
+    }
 
     const tx = db.transaction(() => {
-      const info = db
-        .prepare(
-          `INSERT INTO clientes
-           (institucion_id, nombre, dpi, dpi_hash, dpi_scan_path, fecha_nac, lugar_nac,
-            profesion, estado_civil, nit, nit_hash, telefono, email, domicilio, recibo_path,
-            ingresos, empleo, estado, autorizaciones)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'pendiente', ?)`
-        )
-        .run(
-          inst.id,
-          b.nombre,
-          encrypt(b.dpi), hashFor('dpi', b.dpi),
-          b.dpi_scan_path || null,
-          b.fecha_nac || null, b.lugar_nac || null,
-          b.profesion || null, b.estado_civil || null,
-          encrypt(b.nit), hashFor('nit', b.nit),
-          b.telefono || null, b.email || null,
-          encrypt(b.domicilio),
-          b.recibo_path || null,
-          encrypt(normalizeMoney(b.ingresos)),
-          b.empleo || null,
-          autorizaciones
-        );
-      db.prepare('UPDATE solicitudes_tokens SET usado = 1, cliente_id = ? WHERE id = ?').run(info.lastInsertRowid, t.id);
-      return info.lastInsertRowid;
+      db.prepare('UPDATE contratos SET datos_borrador = ?, estado = ? WHERE id = ?')
+        .run(serializado, 'revision_tenant', r.contrato.id);
+      db.prepare('UPDATE contratos_tokens SET usado = 1 WHERE id = ?').run(r.token_row.id);
+    });
+    tx();
+
+    auditAnonimo('cliente_confirmo_solicitud', 'contrato', r.contrato.id, {
+      token_id: r.token_row.id,
+    }, {
+      institucion_id: r.contrato.institucion_id,
+      ip: req.ip,
+      user_agent: req.get('user-agent'),
     });
 
-    const clienteId = tx();
-    res.status(201).json({
+    res.json({
       ok: true,
-      cliente_id: clienteId,
-      solicitud_no: `S-${String(clienteId).padStart(5, '0')}`,
+      contrato_id: r.contrato.id,
+      no_contrato: r.contrato.no_contrato,
+      estado: 'revision_tenant',
+      institucion_nombre: r.institucion.nombre,
     });
   } catch (err) {
-    if (err.code === 'SQLITE_CONSTRAINT_UNIQUE')
-      return res.status(409).json({ error: 'Ya existe un cliente con ese DPI en esta institución', code: 409 });
     next(err);
   }
-});
-
-publicRouter.post('/scan-dpi', (req, res) => {
-  const pick = FAKE_DPI[Math.floor(Math.random() * FAKE_DPI.length)];
-  res.json({ ...pick, dpi_scan_path: null });
-});
-
-publicRouter.post('/scan-recibo', (req, res) => {
-  const domicilio = FAKE_DOMICILIO[Math.floor(Math.random() * FAKE_DOMICILIO.length)];
-  res.json({ domicilio, recibo_path: null });
 });
 
 module.exports = { authRouter, publicRouter };
