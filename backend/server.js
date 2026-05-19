@@ -18,6 +18,7 @@ const clientesJuridicosRoutes = require('./routes/clientesJuridicos');
 const { authRouter: solicitudesAuthRouter, publicRouter: solicitudesPublicRouter } = require('./routes/solicitudes');
 const { authenticate } = require('./middleware/auth');
 const errorHandler = require('./middleware/errorHandler');
+const ocr = require('./utils/ocr');
 
 const app = express();
 
@@ -71,6 +72,8 @@ app.use(errorHandler);
 
 const server = app.listen(PORT, () => {
   console.log(`LexDocs API escuchando en http://localhost:${PORT}`);
+  // Pre-carga del modelo Tesseract 'spa' en background (no bloquea el listen).
+  ocr.warmUp();
 });
 
 process.on('SIGTERM', () => server.close(() => process.exit(0)));

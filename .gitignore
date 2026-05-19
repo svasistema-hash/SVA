@@ -24,6 +24,10 @@ node_modules
 dist
 dist-ssr
 
+# Modelos OCR de tesseract.js (se descargan automáticamente)
+*.traineddata
+.tmp-ocr-test/
+
 # Editor / IDE
 .vscode/
 .idea/

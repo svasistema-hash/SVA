@@ -7,6 +7,9 @@ const db = require('../db');
 const { UPLOADS_PATH } = require('../config');
 const { encrypt, decrypt, hashFor } = require('../encryption');
 const { normalizeMoney } = require('../utils/money');
+const ocr = require('../utils/ocr');
+const { parseDPI } = require('../utils/dpi-parser');
+const { parseRecibo } = require('../utils/recibo-parser');
 
 const router = express.Router();
 
@@ -268,8 +271,9 @@ router.post('/', (req, res, next) => {
 });
 
 // ──────────────────────────────────────────────────────────────
-// Uploads (scan-dpi / scan-recibo) — FAKE OCR, sin cambios estructurales.
-// La imagen sube real con nombre UUID; los datos retornados son ficticios.
+// Uploads (scan-dpi / scan-recibo) — OCR REAL con Tesseract.js (esp).
+// La imagen sube con nombre UUID. tesseract corre en el archivo, los parsers
+// extraen DPI / nombre / fechas / dirección. confidence < 50 → warning.
 // ──────────────────────────────────────────────────────────────
 
 if (!fs.existsSync(UPLOADS_PATH)) fs.mkdirSync(UPLOADS_PATH, { recursive: true });
@@ -293,35 +297,63 @@ const upload = multer({
   },
 });
 
-const FAKE_DPI = [
-  { nombre: 'Juan Carlos Pérez García', dpi: '2845 73901 0801', fecha_nac: '1985-06-12', lugar_nac: 'Guatemala, Guatemala', genero: 'Masculino' },
-  { nombre: 'María Fernanda López Soto', dpi: '5678 12345 0102', fecha_nac: '1990-11-22', lugar_nac: 'Quetzaltenango, Quetzaltenango', genero: 'Femenino' },
-  { nombre: 'José Antonio Méndez Ramírez', dpi: '8765 43210 0103', fecha_nac: '1978-07-04', lugar_nac: 'Antigua Guatemala, Sacatepéquez', genero: 'Masculino' },
-];
-
-const FAKE_DOMICILIO = [
-  { domicilio: '5a. Calle 3-40, Zona 10, Santa Catarina Pinula, Guatemala', comprobante: 'Energuate · Marzo 2026' },
-  { domicilio: '12 avenida 3-21 zona 1, Quetzaltenango', comprobante: 'EEGSA · Febrero 2026' },
-  { domicilio: 'Lote 42, Colonia Vista Hermosa, Mixco', comprobante: 'Tigo Hogar · Marzo 2026' },
-];
-
-router.post('/scan-dpi', upload.single('imagen'), (req, res, next) => {
+router.post('/scan-dpi', upload.single('imagen'), async (req, res, next) => {
   try {
     if (!req.file)
       return res.status(400).json({ error: 'Archivo requerido (campo "imagen")', code: 400 });
-    const pick = FAKE_DPI[Math.floor(Math.random() * FAKE_DPI.length)];
-    res.json({ ...pick, dpi_scan_path: path.basename(req.file.path) });
+
+    const filename = path.basename(req.file.path);
+    const { text, confidence } = await ocr.recognize(req.file.path);
+    const parsed = parseDPI(text);
+
+    let warning = null;
+    if (confidence < 30) {
+      warning = 'Calidad de imagen muy baja. Verifica los datos manualmente.';
+    } else if (confidence < 50 || !parsed.dpi) {
+      warning = 'Verificar datos extraídos. La imagen tiene baja legibilidad.';
+    }
+
+    res.json({
+      confidence,
+      dpi: parsed.dpi,
+      nombre: parsed.nombre,
+      fecha_nac: parsed.fecha_nac,
+      lugar_nac: parsed.lugar_nac,
+      raw_text: text,
+      imagen_url: `/api/files/${filename}`,
+      dpi_scan_path: filename,
+      warning,
+    });
   } catch (err) {
     next(err);
   }
 });
 
-router.post('/scan-recibo', upload.single('imagen'), (req, res, next) => {
+router.post('/scan-recibo', upload.single('imagen'), async (req, res, next) => {
   try {
     if (!req.file)
       return res.status(400).json({ error: 'Archivo requerido (campo "imagen")', code: 400 });
-    const pick = FAKE_DOMICILIO[Math.floor(Math.random() * FAKE_DOMICILIO.length)];
-    res.json({ ...pick, recibo_path: path.basename(req.file.path) });
+
+    const filename = path.basename(req.file.path);
+    const { text, confidence } = await ocr.recognize(req.file.path);
+    const parsed = parseRecibo(text);
+
+    let warning = null;
+    if (confidence < 30) {
+      warning = 'Calidad de imagen muy baja. Verifica la dirección manualmente.';
+    } else if (confidence < 50 || !parsed.direccion) {
+      warning = 'Verificar dirección extraída. La imagen tiene baja legibilidad.';
+    }
+
+    res.json({
+      confidence,
+      domicilio: parsed.direccion,
+      comprobante: parsed.comprobante,
+      raw_text: text,
+      imagen_url: `/api/files/${filename}`,
+      recibo_path: filename,
+      warning,
+    });
   } catch (err) {
     next(err);
   }
