@@ -155,6 +155,47 @@ const clienteJuridicoSchema = z
       return pag <= susc && susc <= auth;
     },
     { message: 'Capital pagado debe ser ≤ suscrito ≤ autorizado', path: ['capital_pagado'] }
+  )
+  // ─── Reglas del Código de Comercio de Guatemala ──────────────
+  .refine(
+    (d) => {
+      // Art. 162: Administrador Único y Presidente — nombramiento máximo 3 años.
+      const cargosLimitados = ['Administrador Único', 'Presidente'];
+      if (!cargosLimitados.includes(d.rep_cargo)) return true;
+      const inicio = new Date(d.rep_vigencia_inicio);
+      const fin = new Date(d.rep_vigencia_vencimiento);
+      const diffYears = (fin - inicio) / (365.25 * 24 * 60 * 60 * 1000);
+      return diffYears <= 3;
+    },
+    {
+      message: 'Para Administrador Único o Presidente, el Código de Comercio (Art. 162) limita el nombramiento a un máximo de 3 años',
+      path: ['rep_vigencia_vencimiento'],
+    }
+  )
+  .refine(
+    (d) => {
+      // Art. 89: Sociedades Anónimas — capital pagado ≥ 25% del suscrito.
+      if (d.tipo_sociedad !== 'S.A.') return true;
+      const susc = parseFloat(String(d.capital_suscrito).replace(/[^\d.\-]/g, ''));
+      const pag = parseFloat(String(d.capital_pagado).replace(/[^\d.\-]/g, ''));
+      return pag >= susc * 0.25;
+    },
+    {
+      message: 'Para Sociedades Anónimas, el capital pagado debe ser al menos el 25% del suscrito (Art. 89 Código de Comercio)',
+      path: ['capital_pagado'],
+    }
+  )
+  .refine(
+    (d) => {
+      // Art. 90 (modificado por Decreto 18-2017): S.A. — capital pagado mínimo Q200.
+      if (d.tipo_sociedad !== 'S.A.') return true;
+      const pag = parseFloat(String(d.capital_pagado).replace(/[^\d.\-]/g, ''));
+      return pag >= 200;
+    },
+    {
+      message: 'Para Sociedades Anónimas, el capital pagado mínimo es Q200.00 (Art. 90 Código de Comercio, modificado por Decreto 18-2017)',
+      path: ['capital_pagado'],
+    }
   );
 
 // Schema para UPDATE: por implementar cuando lleguemos al PUT con
