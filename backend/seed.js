@@ -215,6 +215,154 @@ function run() {
       });
     }
 
+    // ─── Clientes Jurídicos (F2) ─────────────────────────────
+    // Idempotente: skip si ya existe (institucion_id, nit_hash).
+    const sampleJuridicos = [
+      {
+        nombre: 'Constructora del Sur, S.A.',
+        nit: '78901234-5',
+        domicilio: '5a avenida 10-25 zona 9, Ciudad de Guatemala',
+        telefono: '2222-3333',
+        email: 'contacto@constructorasur.gt',
+        nombre_comercial: 'CDS',
+        tipo_sociedad: 'S.A.',
+        objeto_social: 'Construcción y desarrollo inmobiliario',
+        escritura_numero: '125',
+        escritura_fecha: '2020-03-15',
+        escritura_notario: 'Lic. Roberto García Méndez',
+        registro_mercantil_numero: 'R-12345',
+        registro_mercantil_folio: '88',
+        registro_mercantil_libro: '142',
+        registro_mercantil_fecha: '2020-04-20',
+        patente_sociedad_numero: 'PS-9876',
+        patente_sociedad_fecha: '2020-05-10',
+        patente_empresa_numero: 'PE-5432',
+        patente_empresa_fecha: '2020-05-10',
+        capital_autorizado: 5000000,
+        capital_suscrito: 2000000,
+        capital_pagado: 500000,           // 25% de 2M ✓ Art.89, > Q200 ✓ Art.90
+        regimen_tributario: 'Régimen General',
+        actividad_economica: 'Construcción',
+        fecha_inicio_actividades: '2020-06-01',
+        rep_nombre_completo: 'Luis Roberto Ramírez Soto',
+        rep_dpi: '2345 67890 0301',
+        rep_profesion: 'Ingeniero Civil',
+        rep_cargo: 'Gerente General',    // sin límite Art.162
+        rep_acta_numero: '7',
+        rep_acta_fecha: '2024-01-15',
+        rep_acta_notario: 'Lic. Ana María Solís',
+        rep_inscripcion_numero: 'I-2024-0089',
+        rep_inscripcion_folio: '12',
+        rep_inscripcion_libro: '5',
+        rep_vigencia_inicio: '2024-01-15',
+        rep_vigencia_vencimiento: '2029-01-15', // 5 años, Gerente General permite
+      },
+      {
+        nombre: 'Servicios Mar, S.R.L.',
+        nit: '65432198-7',
+        domicilio: '12 calle 8-30 zona 4, Ciudad de Guatemala',
+        telefono: '2444-5555',
+        email: 'admin@serviciosmar.gt',
+        nombre_comercial: 'Mar Servicios',
+        tipo_sociedad: 'S.R.L.',
+        objeto_social: 'Importación y distribución de equipo marítimo',
+        escritura_numero: '88',
+        escritura_fecha: '2022-09-10',
+        escritura_notario: 'Lic. Pedro Antonio Castillo',
+        registro_mercantil_numero: 'R-67890',
+        registro_mercantil_folio: '156',
+        registro_mercantil_libro: '178',
+        registro_mercantil_fecha: '2022-10-05',
+        patente_sociedad_numero: 'PS-4321',
+        patente_sociedad_fecha: '2022-10-20',
+        patente_empresa_numero: 'PE-8765',
+        patente_empresa_fecha: '2022-10-20',
+        capital_autorizado: 200000,
+        capital_suscrito: 100000,
+        capital_pagado: 100000,           // S.R.L. no aplica Art.89/90
+        regimen_tributario: 'Pequeño Contribuyente',
+        actividad_economica: 'Comercio',
+        fecha_inicio_actividades: '2022-11-01',
+        rep_nombre_completo: 'Ana Lucía Soto Méndez',
+        rep_dpi: '4567 89012 0103',
+        rep_profesion: 'Administradora de Empresas',
+        rep_cargo: 'Administrador Único', // limitado a 3 años
+        rep_acta_numero: '3',
+        rep_acta_fecha: '2024-06-01',
+        rep_acta_notario: 'Lic. María del Carmen Vásquez',
+        rep_inscripcion_numero: 'I-2024-0145',
+        rep_inscripcion_folio: '8',
+        rep_inscripcion_libro: '5',
+        rep_vigencia_inicio: '2024-06-01',
+        rep_vigencia_vencimiento: '2027-06-01', // 3 años exactos (1095 días, no cruza Feb 29 dentro del rango)
+      },
+    ];
+
+    const insClienteBase = db.prepare(
+      `INSERT INTO clientes
+       (institucion_id, nombre, nit, nit_hash, domicilio, telefono, email,
+        tipo_persona, estado)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'juridica', 'activo')`
+    );
+    const insJur = db.prepare(
+      `INSERT INTO clientes_juridicos
+       (cliente_id, nombre_comercial, tipo_sociedad, tipo_sociedad_otra, objeto_social,
+        escritura_numero, escritura_fecha, escritura_notario,
+        registro_mercantil_numero, registro_mercantil_folio,
+        registro_mercantil_libro, registro_mercantil_fecha,
+        patente_sociedad_numero, patente_sociedad_fecha,
+        patente_empresa_numero, patente_empresa_fecha,
+        capital_autorizado, capital_suscrito, capital_pagado,
+        regimen_tributario, actividad_economica, fecha_inicio_actividades,
+        rep_nombre_completo, rep_dpi, rep_dpi_hash, rep_profesion, rep_cargo,
+        rep_acta_numero, rep_acta_fecha, rep_acta_notario,
+        rep_inscripcion_numero, rep_inscripcion_folio, rep_inscripcion_libro,
+        rep_vigencia_inicio, rep_vigencia_vencimiento)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+               ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+
+    for (const j of sampleJuridicos) {
+      const nitH = hashFor('nit', j.nit);
+      const existing = db.prepare(
+        'SELECT id FROM clientes WHERE institucion_id = ? AND nit_hash = ?'
+      ).get(institucion.id, nitH);
+      if (existing) continue; // idempotente
+
+      const info = insClienteBase.run(
+        institucion.id,
+        j.nombre,
+        encrypt(j.nit), nitH,
+        encrypt(j.domicilio),
+        j.telefono || null,
+        j.email || null
+      );
+      const clienteId = info.lastInsertRowid;
+
+      insJur.run(
+        clienteId,
+        j.nombre_comercial || null,
+        j.tipo_sociedad, null, j.objeto_social,
+        j.escritura_numero, j.escritura_fecha, j.escritura_notario,
+        j.registro_mercantil_numero, j.registro_mercantil_folio,
+        j.registro_mercantil_libro, j.registro_mercantil_fecha,
+        j.patente_sociedad_numero, j.patente_sociedad_fecha,
+        j.patente_empresa_numero, j.patente_empresa_fecha,
+        encrypt(normalizeMoney(j.capital_autorizado)),
+        encrypt(normalizeMoney(j.capital_suscrito)),
+        encrypt(normalizeMoney(j.capital_pagado)),
+        j.regimen_tributario || null,
+        j.actividad_economica || null,
+        j.fecha_inicio_actividades || null,
+        j.rep_nombre_completo,
+        encrypt(j.rep_dpi), hashFor('dpi', j.rep_dpi),
+        j.rep_profesion || null, j.rep_cargo,
+        j.rep_acta_numero, j.rep_acta_fecha, j.rep_acta_notario,
+        j.rep_inscripcion_numero, j.rep_inscripcion_folio || null, j.rep_inscripcion_libro || null,
+        j.rep_vigencia_inicio, j.rep_vigencia_vencimiento
+      );
+    }
+
     return { institucion, modelo };
   });
 
@@ -227,6 +375,8 @@ function run() {
     modelos: db.prepare('SELECT COUNT(*) AS n FROM modelos').get().n,
     clausulas: db.prepare('SELECT COUNT(*) AS n FROM clausulas').get().n,
     clientes: db.prepare('SELECT COUNT(*) AS n FROM clientes').get().n,
+    clientes_individuales: db.prepare("SELECT COUNT(*) AS n FROM clientes WHERE tipo_persona='individual'").get().n,
+    clientes_juridicos: db.prepare("SELECT COUNT(*) AS n FROM clientes WHERE tipo_persona='juridica'").get().n,
   };
 
   console.log('Seed OK');

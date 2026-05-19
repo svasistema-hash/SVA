@@ -14,6 +14,7 @@ const contratosRoutes = require('./routes/contratos');
 const clientesRoutes = require('./routes/clientes');
 const modelosRoutes = require('./routes/modelos');
 const clausulasRoutes = require('./routes/clausulas');
+const clientesJuridicosRoutes = require('./routes/clientesJuridicos');
 const { authRouter: solicitudesAuthRouter, publicRouter: solicitudesPublicRouter } = require('./routes/solicitudes');
 const { authenticate } = require('./middleware/auth');
 const errorHandler = require('./middleware/errorHandler');
@@ -58,6 +59,9 @@ app.get('/api/files/:filename', authenticate, (req, res, next) => {
 
 app.use('/api/instituciones', authenticate, institucionesRoutes);
 app.use('/api/contratos', authenticate, contratosRoutes);
+// /api/clientes/juridicos DEBE registrarse ANTES de /api/clientes para que la
+// segunda ruta (con GET /:id) no capture "juridicos" como un id.
+app.use('/api/clientes/juridicos', authenticate, clientesJuridicosRoutes);
 app.use('/api/clientes', authenticate, clientesRoutes);
 app.use('/api/modelos', authenticate, modelosRoutes);
 app.use('/api/clausulas', authenticate, clausulasRoutes);

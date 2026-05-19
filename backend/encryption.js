@@ -55,12 +55,23 @@ function normalize(value) {
   return String(value).replace(/\s+/g, '').toUpperCase();
 }
 
+// Canonicaliza un NIT guatemalteco para hashing/búsqueda: strip whitespace + uppercase +
+// remover todo lo posterior al último guión (que convencionalmente es el dígito verificador).
+// Así "78901234-5", "78901234", "78901234 - 5" hashean al mismo valor.
+function normalizeNit(value) {
+  if (value === null || value === undefined) return '';
+  let s = String(value).replace(/\s+/g, '').toUpperCase();
+  const lastH = s.lastIndexOf('-');
+  if (lastH > 0) s = s.substring(0, lastH);
+  return s;
+}
+
 function hashFor(purpose, value) {
   if (value === null || value === undefined || value === '') return null;
   if (!purpose || typeof purpose !== 'string') {
     throw new Error('hashFor: purpose tag (string) requerido');
   }
-  const normalized = normalize(value);
+  const normalized = purpose === 'nit' ? normalizeNit(value) : normalize(value);
   if (normalized === '') return null;
   // Derivar subkey por purpose para que el mismo valor en columnas distintas no comparta hash.
   const subkey = crypto.createHmac('sha256', KEY).update('purpose:' + purpose).digest();
@@ -74,4 +85,4 @@ function isEncrypted(value) {
   return buf.length >= IV_LEN + TAG_LEN + 1;
 }
 
-module.exports = { encrypt, decrypt, hashFor, isEncrypted, normalize };
+module.exports = { encrypt, decrypt, hashFor, isEncrypted, normalize, normalizeNit };

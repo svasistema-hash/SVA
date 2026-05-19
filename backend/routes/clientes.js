@@ -30,6 +30,7 @@ function clienteFromRow(row) {
   return {
     id: row.id,
     institucion_id: row.institucion_id,
+    tipo_persona: row.tipo_persona || 'individual',
     nombre: row.nombre,
     dpi: safeDecrypt(row.dpi, 'dpi', row.id),
     dpi_scan_path: row.dpi_scan_path,
@@ -51,6 +52,9 @@ function clienteFromRow(row) {
     conyuge_nombre: row.conyuge_nombre,
     conyuge_dpi: safeDecrypt(row.conyuge_dpi, 'conyuge_dpi', row.id),
     ingresos_rango: row.ingresos_rango,
+    // Campos extra que vienen del LEFT JOIN con clientes_juridicos (NULL para individuales)
+    tipo_sociedad: row.tipo_sociedad || null,
+    nombre_comercial: row.nombre_comercial || null,
     // NUNCA retornar: dpi_hash, nit_hash, conyuge_dpi_hash
   };
 }
@@ -65,44 +69,57 @@ router.get('/', (req, res, next) => {
     const dpiQuery = (req.query.dpi || '').trim();
     const nitQuery = (req.query.nit || '').trim();
     const estado = req.query.estado;
+    const tipoPersona = req.query.tipo_persona;
     const institucion_id = req.query.institucion_id ? parseInt(req.query.institucion_id, 10) : null;
 
-    let sql = 'SELECT * FROM clientes WHERE 1=1';
+    // LEFT JOIN con clientes_juridicos para exponer tipo_sociedad / nombre_comercial
+    // y para que la búsqueda por DPI también capture representantes legales jurídicos.
+    let sql = `
+      SELECT c.*, cj.tipo_sociedad, cj.nombre_comercial
+      FROM clientes c
+      LEFT JOIN clientes_juridicos cj ON cj.cliente_id = c.id
+      WHERE 1=1
+    `;
     const params = [];
     if (req.user.institucion_id) {
-      sql += ' AND institucion_id = ?';
+      sql += ' AND c.institucion_id = ?';
       params.push(req.user.institucion_id);
     } else if (institucion_id) {
-      sql += ' AND institucion_id = ?';
+      sql += ' AND c.institucion_id = ?';
       params.push(institucion_id);
     }
     if (estado === 'pendiente' || estado === 'activo' || estado === 'inactivo') {
-      sql += ' AND estado = ?';
+      sql += ' AND c.estado = ?';
       params.push(estado);
     } else if (!estado) {
-      sql += " AND estado != 'inactivo'";
+      sql += " AND c.estado != 'inactivo'";
     }
-    // Búsqueda por nombre (plaintext, LIKE)
+    if (tipoPersona === 'individual' || tipoPersona === 'juridica') {
+      sql += ' AND c.tipo_persona = ?';
+      params.push(tipoPersona);
+    }
+    // Búsqueda por nombre (plaintext, LIKE en clientes.nombre o juridico.nombre_comercial)
     if (q) {
-      sql += ' AND nombre LIKE ?';
-      params.push(`%${q}%`);
+      sql += ' AND (c.nombre LIKE ? OR cj.nombre_comercial LIKE ?)';
+      params.push(`%${q}%`, `%${q}%`);
     }
-    // Búsqueda exacta por DPI o NIT vía hash (índices)
+    // DPI: matchea cliente individual (c.dpi_hash) o representante legal jurídico (cj.rep_dpi_hash).
     if (dpiQuery) {
       const h = hashFor('dpi', dpiQuery);
       if (h) {
-        sql += ' AND dpi_hash = ?';
-        params.push(h);
+        sql += ' AND (c.dpi_hash = ? OR cj.rep_dpi_hash = ?)';
+        params.push(h, h);
       }
     }
+    // NIT: busca en clientes.nit_hash (tanto individuales como jurídicos lo poblan).
     if (nitQuery) {
       const h = hashFor('nit', nitQuery);
       if (h) {
-        sql += ' AND nit_hash = ?';
+        sql += ' AND c.nit_hash = ?';
         params.push(h);
       }
     }
-    sql += ' ORDER BY created_at DESC LIMIT 100';
+    sql += ' ORDER BY c.created_at DESC LIMIT 100';
     const rows = db.prepare(sql).all(...params);
     res.json(rows.map(clienteFromRow));
   } catch (err) {
