@@ -13,13 +13,13 @@
 
 const path = require('path');
 const fs = require('fs');
-require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
+require('dotenv').config({ path: path.resolve(__dirname, '..', '..', '.env') });
 
 const Database = require('better-sqlite3');
-const { encrypt, decrypt, hashFor, isEncrypted } = require('../encryption');
-const { normalizeMoney } = require('../utils/money');
+const { encrypt, decrypt, hashFor, isEncrypted } = require('../../encryption');
+const { normalizeMoney } = require('../../utils/money');
 
-const BACKEND = path.join(__dirname, '..');
+const BACKEND = path.join(__dirname, '..', '..');
 const DB_PATH = path.join(BACKEND, 'lexdocs.db');
 const BACKUP_BIN = path.join(BACKEND, 'lexdocs.db.pre-encryption-2026-05-18');
 const BACKUP_SQL = path.join(BACKEND, 'lexdocs.db.pre-encryption-2026-05-18.sql');
@@ -91,7 +91,7 @@ try {
     }
   }
 
-  // 4.2) clientes.ingresos — normalizeMoney + encrypt (sin hash)
+  // 4.2) clientes.ingresos
   {
     const k = K('clientes', 'ingresos');
     const rows = db.prepare(`SELECT id, ingresos AS v FROM clientes WHERE ingresos IS NOT NULL AND ingresos != ''`).all();
@@ -109,7 +109,7 @@ try {
     }
   }
 
-  // 4.3) clientes.domicilio — encrypt sin hash
+  // 4.3) clientes.domicilio
   {
     const k = K('clientes', 'domicilio');
     const rows = db.prepare(`SELECT id, domicilio AS v FROM clientes WHERE domicilio IS NOT NULL AND domicilio != ''`).all();
@@ -125,7 +125,7 @@ try {
     }
   }
 
-  // 4.4) fiadores.dpi — encrypt + hash 'dpi' (purpose compartido con clientes.dpi)
+  // 4.4) fiadores.dpi
   {
     const k = K('fiadores', 'dpi');
     const rows = db.prepare(`SELECT id, dpi AS v FROM fiadores WHERE dpi IS NOT NULL AND dpi != ''`).all();
@@ -141,7 +141,7 @@ try {
     }
   }
 
-  // 4.5) representantes.dpi — encrypt sin hash
+  // 4.5) representantes.dpi
   {
     const k = K('representantes', 'dpi');
     const rows = db.prepare(`SELECT id, dpi AS v FROM representantes WHERE dpi IS NOT NULL AND dpi != ''`).all();
@@ -157,7 +157,7 @@ try {
     }
   }
 
-  // 4.6) contratos.datos_cliente y datos_garantia — JSON parse → stringify → encrypt
+  // 4.6) contratos.datos_cliente y datos_garantia
   for (const col of ['datos_cliente', 'datos_garantia']) {
     const k = K('contratos', col);
     const rows = db.prepare(`SELECT id, "${col}" AS v FROM contratos WHERE "${col}" IS NOT NULL AND "${col}" != ''`).all();
@@ -176,7 +176,6 @@ try {
     }
   }
 
-  // Si hay errores duros, abortamos para que rollback revierta todo
   const hardErrors = Object.entries(stats).flatMap(([k, s]) => s.errores.map((e) => ({ campo: k, ...e })));
   if (hardErrors.length > 0) {
     console.error('Errores durante migración:', JSON.stringify(hardErrors, null, 2));
@@ -194,7 +193,6 @@ try {
 // ─── Phase 5: Verificación post-commit ────────────────────────
 console.log('\n=== Verificación post-commit ===');
 
-// (a) Counts looks-encrypted
 function countLooksEncrypted(table, col) {
   const rows = db.prepare(`SELECT "${col}" AS v FROM ${table} WHERE "${col}" IS NOT NULL AND "${col}" != ''`).all();
   return rows.filter((r) => isEncrypted(r.v)).length;
@@ -205,17 +203,12 @@ for (const k of Object.keys(preCounts)) {
   verA[k] = { pre_nonnull: preCounts[k], post_encrypted: countLooksEncrypted(t, c) };
 }
 
-// (b/c/d) Spot-checks por tabla — sólo si esta corrida procesó algo.
-// Si nada fue procesado (idempotente re-run), saltamos: el snapshot fue
-// tomado AL INICIO con la DB ya encriptada y el plaintext original no
-// está disponible para comparar.
 const totalProcesadas = Object.values(stats).reduce((s, x) => s + x.procesadas, 0);
 const spotChecks = [];
 if (totalProcesadas === 0) {
   console.log('\n(Re-ejecución idempotente: 0 filas procesadas, spot-checks no aplican.)');
 } else {
 
-// clientes id=1 (DPI + NIT + INGRESOS + DOMICILIO)
 {
   const pre = snap.clientes.find((r) => r.id === 1);
   const now = db.prepare('SELECT * FROM clientes WHERE id = ?').get(1);
@@ -242,7 +235,6 @@ if (totalProcesadas === 0) {
   });
 }
 
-// clientes id=6 (tiene conyuge_dpi)
 {
   const pre = snap.clientes.find((r) => r.id === 6);
   if (pre && pre.conyuge_dpi) {
@@ -260,7 +252,6 @@ if (totalProcesadas === 0) {
   }
 }
 
-// representantes id=1
 {
   const pre = snap.representantes.find((r) => r.id === 1);
   if (pre) {
@@ -275,7 +266,6 @@ if (totalProcesadas === 0) {
   }
 }
 
-// contratos id=2 (datos_cliente + datos_garantia con fiador)
 {
   const pre = snap.contratos.find((r) => r.id === 2);
   if (pre) {
@@ -300,7 +290,7 @@ if (totalProcesadas === 0) {
   }
 }
 
-} // fin de if (totalProcesadas > 0)
+}
 
 // ─── Phase 6: Reporte ─────────────────────────────────────────
 console.log('\n=== Tabla resumen ===');

@@ -4,14 +4,13 @@
 // IDEMPOTENTE: REPLACE no rompe si el patrón ya no existe.
 
 const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
+require('dotenv').config({ path: path.resolve(__dirname, '..', '..', '.env') });
 const Database = require('better-sqlite3');
 
-const db = new Database(path.join(__dirname, '..', 'lexdocs.db'));
+const db = new Database(path.join(__dirname, '..', '..', 'lexdocs.db'));
 
 const VARS = ['monto', 'cuota_mensual', 'seguro_inmueble', 'valor_bien'];
 
-// Patrones por variable, en orden (los más largos/específicos primero)
 const patterns = [];
 for (const v of VARS) {
   patterns.push({ find: `{{moneda}} {{${v}}}`, replace: `{{${v}}}` });
@@ -19,7 +18,6 @@ for (const v of VARS) {
   patterns.push({ find: `Q{{${v}}}`,            replace: `{{${v}}}` });
 }
 
-// ─── Pre: conteo de filas por patrón ───
 console.log('=== Pre-counts (filas con el patrón en texto_base) ===');
 const preCounts = patterns.map((p) => {
   const n = db.prepare("SELECT COUNT(*) AS n FROM clausulas WHERE texto_base LIKE '%' || ? || '%'").get(p.find).n;
@@ -27,7 +25,6 @@ const preCounts = patterns.map((p) => {
 });
 console.table(preCounts);
 
-// ─── Migración ───
 console.log('\n=== Aplicando UPDATEs (transacción única) ===');
 const stmt = db.prepare(`UPDATE clausulas SET texto_base = REPLACE(texto_base, ?, ?)`);
 const stats = [];
@@ -46,7 +43,6 @@ try {
 }
 console.table(stats);
 
-// ─── Post: verificar que no quedan duplicados ───
 console.log('\n=== Post: filas que aún contienen el patrón ===');
 const postCounts = patterns.map((p) => {
   const n = db.prepare("SELECT COUNT(*) AS n FROM clausulas WHERE texto_base LIKE '%' || ? || '%'").get(p.find).n;
@@ -54,7 +50,6 @@ const postCounts = patterns.map((p) => {
 });
 console.table(postCounts);
 
-// ─── Spot-check de cláusulas afectadas ───
 console.log('\n=== Spot-check: texto_base de cláusulas con variables monetarias ===');
 const samples = db.prepare(`
   SELECT id, modelo_id, codigo, substr(texto_base, 1, 240) AS texto_base_preview

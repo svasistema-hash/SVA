@@ -6,10 +6,10 @@
 
 const path = require('path');
 const fs = require('fs');
-require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
+require('dotenv').config({ path: path.resolve(__dirname, '..', '..', '.env') });
 const Database = require('better-sqlite3');
 
-const BACKEND = path.join(__dirname, '..');
+const BACKEND = path.join(__dirname, '..', '..');
 const DB_PATH = path.join(BACKEND, 'lexdocs.db');
 const DATE = new Date().toISOString().slice(0, 10);
 const BACKUP_BIN = path.join(BACKEND, `lexdocs.db.pre-f2-${DATE}`);
@@ -60,7 +60,6 @@ function escSql(v) {
   db.close();
 }
 
-// ─── MIGRACIÓN ────────────────────────────────────────────────
 console.log('\n=== Migración (transacción única) ===');
 const db = new Database(DB_PATH);
 db.pragma('foreign_keys = OFF');
@@ -71,7 +70,6 @@ const triggers = db.prepare("SELECT name FROM sqlite_master WHERE type='trigger'
 
 db.exec('BEGIN');
 try {
-  // 1) clientes.tipo_persona
   if (!clientesCols.includes('tipo_persona')) {
     db.exec(`
       ALTER TABLE clientes ADD COLUMN tipo_persona TEXT NOT NULL
@@ -84,7 +82,6 @@ try {
   db.exec('CREATE INDEX IF NOT EXISTS idx_clientes_tipo_persona ON clientes(tipo_persona)');
   console.log('  + idx_clientes_tipo_persona (IF NOT EXISTS)');
 
-  // 2) clientes_juridicos
   if (!tablas.includes('clientes_juridicos')) {
     db.exec(`
       CREATE TABLE clientes_juridicos (
@@ -146,7 +143,6 @@ try {
   db.exec('CREATE INDEX IF NOT EXISTS idx_clientes_juridicos_rep_dpi_hash ON clientes_juridicos(rep_dpi_hash)');
   console.log('  + idx_clientes_juridicos_rep_dpi_hash');
 
-  // 3) Trigger updated_at
   if (!triggers.includes('trg_clientes_juridicos_updated')) {
     db.exec(`
       CREATE TRIGGER trg_clientes_juridicos_updated
@@ -172,7 +168,6 @@ try {
 }
 db.pragma('foreign_keys = ON');
 
-// ─── VERIFICACIONES ───────────────────────────────────────────
 console.log('\n=== Verificaciones post ===');
 
 const fkc = db.pragma('foreign_key_check');

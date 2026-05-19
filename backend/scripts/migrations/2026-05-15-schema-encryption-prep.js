@@ -4,11 +4,11 @@
 // - fiadores: +dpi_hash + índice.
 // NO migra contenido (eso es 3.4).
 const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
+require('dotenv').config({ path: path.resolve(__dirname, '..', '..', '.env') });
 const Database = require('better-sqlite3');
-const { normalize } = require('../encryption');
+const { normalize } = require('../../encryption');
 
-const db = new Database(path.join(__dirname, '..', 'lexdocs.db'));
+const db = new Database(path.join(__dirname, '..', '..', 'lexdocs.db'));
 
 // ───────────────────────────────────────────────────────────────
 // PRE-CHECK: duplicados (institucion_id, normalize(dpi))
