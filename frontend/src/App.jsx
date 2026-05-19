@@ -9,6 +9,8 @@ import Instituciones from './pages/Instituciones';
 import Contratos from './pages/Contratos';
 import Contrato from './pages/Contrato';
 import Wizard from './pages/Wizard';
+import Pendientes from './pages/bufete/Pendientes';
+import PendienteDetalle from './pages/bufete/PendienteDetalle';
 
 import TenantDashboard from './pages/tenant/Dashboard';
 import TenantClientes from './pages/tenant/Clientes';
@@ -39,6 +41,9 @@ export default function App() {
           <Route path="/instituciones" element={<Instituciones />} />
           <Route path="/contratos" element={<Contratos />} />
           <Route path="/contratos/:id" element={<Contrato />} />
+          {/* F1 C5: panel del bufete */}
+          <Route path="/pendientes" element={<Pendientes />} />
+          <Route path="/pendientes/:id" element={<PendienteDetalle />} />
         </Route>
 
         <Route

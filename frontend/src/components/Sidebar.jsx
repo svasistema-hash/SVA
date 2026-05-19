@@ -1,6 +1,12 @@
+// Sidebar del bufete (vista admin LexDocs).
+// Header minimalista: "SVA".
+// Item "Pendientes (N)" con contador en vivo desde /api/pendientes/conteo.
+
 import { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { fetchInstituciones } from '../api/instituciones';
+import { fetchPendientesConteo } from '../api/pendientes';
+import { useStore } from '../store/useStore';
 
 const TIPOS = [
   { key: 'banco', label: 'Bancos' },
@@ -12,22 +18,37 @@ const TIPOS = [
 export default function Sidebar() {
   const [insts, setInsts] = useState([]);
   const [openTipo, setOpenTipo] = useState('banco');
+  const [conteoPendientes, setConteoPendientes] = useState(null);
   const loc = useLocation();
+  const user = useStore((s) => s.user);
+  const esBufete = user?.role === 'admin' && !user?.institucion_id;
 
   useEffect(() => {
     fetchInstituciones().then(setInsts).catch(() => setInsts([]));
   }, []);
 
-  const grouped = TIPOS.map((t) => ({
-    ...t,
-    items: insts.filter((i) => i.tipo === t.key),
-  }));
+  // Refresca contador on-nav (solo si es bufete).
+  useEffect(() => {
+    if (!esBufete) return;
+    fetchPendientesConteo().then(setConteoPendientes).catch(() => setConteoPendientes(null));
+  }, [esBufete, loc.pathname]);
+
+  const grouped = TIPOS.map((t) => ({ ...t, items: insts.filter((i) => i.tipo === t.key) }));
 
   return (
     <aside className="sidebar">
-      <div className="sidebar-brand">
-        <div className="name">LexDocs<small>Guatemala</small></div>
+      <div className="sidebar-brand" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+        <div className="name" style={{ fontSize: 22, letterSpacing: '0.18em', fontWeight: 400 }}>SVA</div>
       </div>
+
+      {esBufete && (
+        <NavLink to="/pendientes" className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')}>
+          <span>Pendientes</span>
+          {conteoPendientes?.n > 0 && (
+            <span className="count" style={{ background: 'var(--gold)', color: '#fff', padding: '1px 8px', borderRadius: 999, fontSize: 11 }}>{conteoPendientes.n}</span>
+          )}
+        </NavLink>
+      )}
 
       <NavLink to="/" end className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')}>
         <span>Dashboard</span>
@@ -66,6 +87,10 @@ export default function Sidebar() {
             ))}
         </div>
       ))}
+
+      <div className="sidebar-section" style={{ marginTop: 'auto', paddingTop: 16, fontSize: 10, color: 'var(--text-dim)', letterSpacing: '0.08em' }}>
+        Plataforma LexDocs
+      </div>
     </aside>
   );
 }
