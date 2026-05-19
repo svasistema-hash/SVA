@@ -14,6 +14,9 @@ import TenantDashboard from './pages/tenant/Dashboard';
 import TenantClientes from './pages/tenant/Clientes';
 import TenantCliente from './pages/tenant/Cliente';
 import TenantClienteNuevo from './pages/tenant/ClienteNuevo';
+import ClienteJuridicoLista from './pages/tenant/ClienteJuridicoLista';
+import ClienteJuridicoNuevo from './pages/tenant/ClienteJuridicoNuevo';
+import ClienteJuridicoDetalle from './pages/tenant/ClienteJuridicoDetalle';
 import TenantContratos from './pages/tenant/Contratos';
 import TenantModelos from './pages/tenant/Modelos';
 import TenantModeloEdit from './pages/tenant/ModeloEdit';
@@ -41,8 +44,15 @@ export default function App() {
         >
           <Route index element={<TenantDashboard />} />
           <Route path="clientes" element={<TenantClientes />} />
+          <Route path="clientes/individuales" element={<TenantClientes />} />
+          <Route path="clientes/individuales/nuevo" element={<TenantClienteNuevo />} />
+          <Route path="clientes/individuales/:id" element={<TenantCliente />} />
+          {/* Legacy: paths sin /individuales/ siguen funcionando para compat con código existente. */}
           <Route path="clientes/nuevo" element={<TenantClienteNuevo />} />
           <Route path="clientes/:id" element={<TenantCliente />} />
+          <Route path="clientes/juridicos" element={<ClienteJuridicoLista />} />
+          <Route path="clientes/juridicos/nuevo" element={<ClienteJuridicoNuevo />} />
+          <Route path="clientes/juridicos/:id" element={<ClienteJuridicoDetalle />} />
           <Route path="contratos" element={<TenantContratos />} />
           <Route path="contratos/nuevo" element={<Wizard />} />
           <Route path="contratos/:id/editar" element={<Wizard />} />
