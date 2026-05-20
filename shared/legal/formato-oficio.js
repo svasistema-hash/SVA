@@ -4,11 +4,16 @@ const MARGIN_LEFT = 30;
 const MARGIN_RIGHT = 25;
 const MARGIN_TOP = 22;
 const MARGIN_BOTTOM = 22;
-const FONT_BODY = 'EB Garamond';
+// F1 hotfix P3: formato notarial guatemalteco.
+// - FONT_BODY: 'Libre Baskerville' como primario (serif clásico, legal-friendly)
+//   con fallback robusto a Times New Roman (presente en todos los sistemas).
+// - LINE_HEIGHT: 1.5 (notarial estándar, antes 1.95 = demasiado espaciado).
+// - FONT_SIZE_BODY: 12pt (antes 12.5pt, ahora ajustado a tamaño notarial típico).
+const FONT_BODY = 'Libre Baskerville';
 const FONT_UI = 'DM Sans';
 const FONT_MONO = 'DM Mono';
-const FONT_SIZE_BODY = '12.5pt';
-const LINE_HEIGHT = 1.95;
+const FONT_SIZE_BODY = '12pt';
+const LINE_HEIGHT = 1.5;
 const COLOR_TEXT = '#111111';
 
 function getCSSOficio() {
@@ -27,6 +32,10 @@ function getCSSOficio() {
       hyphens: auto;
       margin: 0;
     }
+    /* P3 hotfix: cláusulas pegadas (sin separación vertical entre párrafos)
+       para que el contrato fluya como un solo cuerpo notarial. */
+    .contrato-body { text-align: justify; }
+    .contrato-body p + p { margin-top: 0; }
 
     header.doc-head { text-align: center; margin-bottom: 10mm; }
     header.doc-head .banco {
