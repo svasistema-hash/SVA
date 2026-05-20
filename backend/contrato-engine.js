@@ -460,7 +460,13 @@ async function generarPDF(html, filename) {
   const finalName = safe.endsWith('.pdf') ? safe : `${safe}.pdf`;
   const absPath = path.join(PDFS_PATH, finalName);
 
-  const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+  // En Railway (Linux): PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium del nix.
+  // Localmente: puppeteer.launch usa el Chromium que viene con el paquete.
+  const launchOpts = { headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] };
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    launchOpts.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
+  const browser = await puppeteer.launch(launchOpts);
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'networkidle0' });

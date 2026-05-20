@@ -15,5 +15,10 @@ module.exports = {
   DB_PATH: path.resolve(BACKEND_DIR, process.env.DB_PATH || './lexdocs.db'),
   UPLOADS_PATH: path.resolve(BACKEND_DIR, process.env.UPLOADS_PATH || '../uploads'),
   PDFS_PATH: path.resolve(BACKEND_DIR, process.env.PDFS_PATH || '../pdfs'),
-  CORS_ORIGIN: ['http://localhost:7777', 'http://127.0.0.1:7777'],
+  // CORS: en dev acepta localhost:7777 + 127.0.0.1:7777.
+  // En producción: setear CORS_ORIGIN como CSV con los dominios permitidos
+  // (e.g. CORS_ORIGIN=https://tu-app.vercel.app,https://otro.vercel.app).
+  CORS_ORIGIN: process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim()).filter(Boolean)
+    : ['http://localhost:7777', 'http://127.0.0.1:7777'],
 };

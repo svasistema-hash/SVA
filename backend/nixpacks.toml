@@ -1,0 +1,27 @@
+# Nixpacks config para Railway. Agrega libs nativas para better-sqlite3,
+# sharp, puppeteer y tesseract.js en Linux.
+
+[phases.setup]
+nixPkgs = [
+  "nodejs_24",
+  "python3",
+  "gcc",
+  "gnumake",
+  # Para Puppeteer (Chromium headless)
+  "chromium",
+  "fontconfig",
+  "freetype",
+  "harfbuzz",
+  "liberation_ttf",
+]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[start]
+cmd = "node server.js"
+
+[variables]
+# Puppeteer usa el Chromium que vino con nix, no descarga el suyo.
+PUPPETEER_SKIP_DOWNLOAD = "true"
+PUPPETEER_EXECUTABLE_PATH = "/usr/bin/chromium"
