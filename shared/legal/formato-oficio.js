@@ -32,10 +32,10 @@ function getCSSOficio() {
       hyphens: auto;
       margin: 0;
     }
-    /* P3 hotfix: cláusulas pegadas (sin separación vertical entre párrafos)
-       para que el contrato fluya como un solo cuerpo notarial. */
+    /* P3 hotfix v2: contrato como un solo párrafo continuo (notarial GT real).
+       Sin saltos de línea entre cláusulas — los títulos en MAYÚSCULAS inline
+       son lo único que las separa visualmente. */
     .contrato-body { text-align: justify; }
-    .contrato-body p + p { margin-top: 0; }
 
     header.doc-head { text-align: center; margin-bottom: 10mm; }
     header.doc-head .banco {
@@ -60,13 +60,11 @@ function getCSSOficio() {
       text-align: justify;
       color: ${COLOR_TEXT};
     }
-    .contrato-body p.comparecencia {
-      text-indent: 0;
-      font-style: italic;
-    }
+    /* Títulos de cláusula inline (CLÁUSULA PRIMERA — TÍTULO.) en mayúsculas,
+       sans-serif para distinguir del cuerpo serif, sin romper línea. */
     .cl-titulo {
       font-family: '${FONT_UI}', sans-serif;
-      font-size: 9.5pt;
+      font-size: 10pt;
       font-weight: 600;
       letter-spacing: 0.04em;
       text-transform: uppercase;

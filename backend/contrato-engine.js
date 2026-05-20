@@ -364,14 +364,19 @@ function generarHTML(contrato) {
   const firmas = metadata.firmas;
   const fiadores = metadata.fiadores || [];
 
+  // P3 hotfix v2: TODO el contrato como un solo párrafo continuo (notarial GT real).
+  // No hay <p> separados por cláusula — el texto fluye sin saltos. Las cláusulas
+  // se distinguen solo por sus títulos en MAYÚSCULAS inline.
   const cuerpo = clausulas
     .map((c) => {
       const esComparecencia = c.codigo === 'comparecencia';
       if (esComparecencia) {
-        return `<p class="comparecencia"><em>${renderClausulaHTML(c.texto)}</em></p>`;
+        return renderClausulaHTML(c.texto);
       }
       const titulo = c.titulo.toUpperCase().replace(/^CLÁUSULA\s+/i, 'CLÁUSULA ');
-      return `<p><span class="cl-titulo">${escapeHtml(titulo)}.</span> ${renderClausulaHTML(c.texto)}</p>`;
+      // Espacio + título inline en mayúsculas + texto. El espacio antes del título
+      // y el punto final del título dan el respiro visual sin romper línea.
+      return ` <span class="cl-titulo">${escapeHtml(titulo)}.</span> ${renderClausulaHTML(c.texto)}`;
     })
     .join('');
 
@@ -408,7 +413,7 @@ function generarHTML(contrato) {
   </header>
 
   <div class="contrato-body">
-    ${cuerpo}
+    <p>${cuerpo}</p>
   </div>
 
   <div class="firmas-bloque firmas-principales">
