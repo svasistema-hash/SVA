@@ -758,7 +758,7 @@ function Paso4({ garantia, onChange }) {
       </p>
 
       {fiadores.length === 0 && (
-        <div className="empty">Aún no hay fiadores. Agregue uno o continúe sin garantes adicionales.</div>
+        <div className="empty">Aún no hay fiadores. Agregue uno o continúe sin garantías adicionales.</div>
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
