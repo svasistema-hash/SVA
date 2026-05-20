@@ -155,7 +155,7 @@ function buildCuentaClause(tipoPago, cuenta) {
   return '';
 }
 
-function buildVars({ representante, cliente, credito, garantia, firmas }) {
+function buildVars({ representante, institucion, cliente, credito, garantia, firmas }) {
   const tipoKey = credito?.tipo_pago || 'debito_automatico';
   const fechaInicioISO = credito?.fecha_inicio || '';
   const plazoMeses = credito?.plazo_meses || '';
@@ -205,13 +205,13 @@ function buildVars({ representante, cliente, credito, garantia, firmas }) {
     ingresos: cliente?.ingresos || '',
     // ─── Variables del motor de formato legal (F7) ──────────────
     // Coexisten con las anteriores; las plantillas viejas siguen funcionando.
-    ...buildLegalVars({ cliente, credito, firmas, garantia, fechaInicioISO, plazoMeses, fechaVencimientoISO }),
+    ...buildLegalVars({ cliente, credito, firmas, garantia, representante, institucion, fechaInicioISO, plazoMeses, fechaVencimientoISO }),
   };
 }
 
 // Variables computadas con frases legales completas según protocolo notarial GT.
 // Si falta un dato, se renderiza como '[VAR]' (placeholder visible en el PDF).
-function buildLegalVars({ cliente, credito, firmas, garantia, fechaInicioISO, plazoMeses, fechaVencimientoISO }) {
+function buildLegalVars({ cliente, credito, firmas, garantia, representante, institucion, fechaInicioISO, plazoMeses, fechaVencimientoISO }) {
   const generoCliente = cliente?.genero || 'M';
   // Frase de comparecencia del cliente individual (deudor).
   const cliente_compareciente = legalFormat.renderClienteCompareciente({
@@ -258,10 +258,28 @@ function buildLegalVars({ cliente, credito, firmas, garantia, fechaInicioISO, pl
   const cliente_nombre_upper  = cliente?.nombre ? legalFormat.nombreEnMayusculas(cliente.nombre) : '';
   const cliente_dpi_letras    = cliente?.dpi ? safe(() => legalFormat.dpiALetras(cliente.dpi)) : '';
 
+  // Fechas concretas en letras (hotfix bloque 5).
+  const fecha_inicio_letras       = fechaInicioISO       ? safe(() => legalFormat.fechaALetras(fechaInicioISO))       : '';
+  const fecha_vencimiento_letras  = fechaVencimientoISO  ? safe(() => legalFormat.fechaALetras(fechaVencimientoISO))  : '';
+
+  // Frase completa de forma de pago según tipo + cuenta. Reemplaza la lógica
+  // legacy de {{tipo_pago}}{{cuenta_clause}} que dejaba "__MISSING__cuenta_clause__".
+  const forma_pago_legal = safe(() =>
+    legalFormat.renderFormaPago(credito?.tipo_pago, credito?.cuenta_banco)
+  );
+
+  // Comparecencia del banco (institución acreditante por su representante).
+  const banco_compareciente = (institucion && representante)
+    ? safe(() => legalFormat.renderRepresentanteBanco(institucion, representante))
+    : '';
+
   return {
     cliente_compareciente,
+    banco_compareciente,
     fecha_contrato_letras,
     fecha_contrato_apertura,
+    fecha_inicio_letras,
+    fecha_vencimiento_letras,
     monto_legal,
     cuota_mensual_legal,
     plazo_legal,
@@ -271,6 +289,7 @@ function buildLegalVars({ cliente, credito, firmas, garantia, fechaInicioISO, pl
     ingresos_legal,
     seguro_inmueble_legal,
     valor_bien_legal,
+    forma_pago_legal,
     cliente_articulo,
     cliente_rol_deudor,
     cliente_rol_acreedor,
@@ -300,7 +319,7 @@ function compilarContrato(modelo_id, datos) {
   const garantia = datos?.datos_garantia || {};
   const firmas = datos?.datos_firmas || {};
 
-  const vars = buildVars({ representante, cliente, credito, garantia, firmas });
+  const vars = buildVars({ representante, institucion, cliente, credito, garantia, firmas });
 
   const clausulas = clausulasRaw.map((c) => ({
     codigo: c.codigo,

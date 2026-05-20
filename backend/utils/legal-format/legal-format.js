@@ -155,6 +155,72 @@ function renderFechaContrato(fechaIso, ciudad = 'Guatemala') {
   return `En la ciudad de ${ciudad} ${fechaEnContratoCompleta(fechaIso)},`;
 }
 
+/**
+ * Frase de comparecencia del banco (institución acreditante) por su representante.
+ *
+ * institucion: { nombre, tipo, nit }
+ * representante: { nombre, cargo, dpi, escritura_no, escritura_fecha, notario_escritura }
+ *
+ * Devuelve algo como:
+ * "la entidad BANCO RSG, SOCIEDAD ANÓNIMA, debidamente representada por
+ *  el señor JUAN PÉREZ, mayor de edad, ..., quien acredita su representación
+ *  mediante mandato número N de fecha X autorizado por el notario Z"
+ */
+function renderRepresentanteBanco(institucion, representante) {
+  if (!institucion) return '';
+  const nombreInst = nombreEnMayusculas(institucion.nombre || '');
+  const tipoInst = TIPOS_INSTITUCION[institucion.tipo] || '';
+  const baseInst = tipoInst
+    ? `la entidad ${nombreInst}, ${tipoInst}`
+    : `la entidad ${nombreInst}`;
+
+  if (!representante) return baseInst;
+
+  const repFrase = renderClienteCompareciente({
+    nombre: representante.nombre,
+    dpi: representante.dpi,
+    genero: representante.genero || 'M',
+    estado_civil: representante.estado_civil,
+    profesion: representante.profesion,
+    domicilio_local: true,
+  });
+  const cargoTxt = (representante.cargo || 'Representante Legal').toLocaleLowerCase('es');
+
+  const mandato = [];
+  if (representante.escritura_no) mandato.push(`mediante escritura pública de mandato número ${representante.escritura_no}`);
+  if (representante.escritura_fecha) mandato.push(`de fecha ${fechaALetras(representante.escritura_fecha)}`);
+  if (representante.notario_escritura) mandato.push(`autorizada por el notario ${representante.notario_escritura}`);
+  const mandatoFrase = mandato.length ? `, lo que acredita ${mandato.join(' ')}` : '';
+
+  return `${baseInst}, debidamente representada por ${repFrase}, quien actúa en su calidad de ${cargoTxt}${mandatoFrase}`;
+}
+
+const TIPOS_INSTITUCION = {
+  banco: 'SOCIEDAD ANÓNIMA',
+  financiera: 'SOCIEDAD FINANCIERA PRIVADA',
+  desarrolladora: 'SOCIEDAD ANÓNIMA',
+  prestamista: '',
+};
+
+/**
+ * Frase completa de la forma de pago: combina la modalidad (débito/depósito/ventanilla)
+ * con la cuenta receptora cuando aplica. Resuelve el caso de `cuenta_clause` vacío.
+ *
+ * tipoPago: 'debito_automatico' | 'deposito_cuenta' | 'ventanilla'
+ * cuentaBanco: string
+ */
+function renderFormaPago(tipoPago, cuentaBanco) {
+  const t = tipoPago || 'debito_automatico';
+  if (t === 'ventanilla') return 'pago en ventanilla de cualquier agencia del Banco';
+  if (cuentaBanco && cuentaBanco.trim()) {
+    const modalidad = t === 'deposito_cuenta' ? 'depósito' : 'débito automático';
+    return `${modalidad} en la cuenta número ${cuentaBanco.trim()} del Banco`;
+  }
+  return t === 'deposito_cuenta'
+    ? 'depósito en la cuenta del Banco que se indique al Deudor'
+    : 'débito automático en la cuenta del Banco que el Deudor designe';
+}
+
 module.exports = {
   // re-exports atómicos
   numeroALetras, enteroALetras, dineroALetras, porcentajeALetras, formatoLegal,
@@ -170,4 +236,6 @@ module.exports = {
   renderClienteCompareciente,
   renderRepresentanteJuridico,
   renderFechaContrato,
+  renderRepresentanteBanco,
+  renderFormaPago,
 };
