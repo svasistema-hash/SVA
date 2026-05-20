@@ -447,7 +447,22 @@ function ClienteNuevo({ cliente, onScan, onCancel, onSave }) {
   );
 }
 
+// Edad calculada desde fecha_nacimiento (YYYY-MM-DD).
+// F1 regla global: la edad SIEMPRE se calcula, nunca se ingresa manual.
+function calcularEdad(fechaNac) {
+  if (!fechaNac) return null;
+  const f = new Date(fechaNac);
+  if (Number.isNaN(f.getTime())) return null;
+  const hoy = new Date();
+  let edad = hoy.getFullYear() - f.getFullYear();
+  const m = hoy.getMonth() - f.getMonth();
+  if (m < 0 || (m === 0 && hoy.getDate() < f.getDate())) edad--;
+  return edad >= 0 ? edad : null;
+}
+
 function Paso2({ cliente, af, onChange, onScanRecibo, reciboPath }) {
+  // F1 regla global: la edad SIEMPRE se calcula desde fecha_nacimiento, nunca manual.
+  const edad = calcularEdad(cliente.fecha_nac);
   return (
     <>
       <div className="card-h"><h3>Paso 2 · Verificar datos del cliente</h3></div>
@@ -473,8 +488,18 @@ function Paso2({ cliente, af, onChange, onScanRecibo, reciboPath }) {
         </div>
       </div>
       <Field label="Profesión" value={cliente.profesion} onChange={(v) => onChange({ profesion: v })} auto={af['datos_cliente.profesion']} />
-      <div className="row-2">
+      <div className="row-3">
         <Field label="Fecha nacimiento" value={cliente.fecha_nac} onChange={(v) => onChange({ fecha_nac: v })} type="date" auto={af['datos_cliente.fecha_nac']} />
+        <div className="field">
+          <label>Edad (calculada)</label>
+          <input
+            className="input"
+            value={edad != null ? `${edad} años` : ''}
+            readOnly
+            placeholder={cliente.fecha_nac ? 'Fecha inválida' : 'Ingrese fecha de nacimiento'}
+            style={{ background: '#faf9f4', color: edad != null ? 'var(--text)' : 'var(--text-dim)' }}
+          />
+        </div>
         <Field label="Lugar nacimiento" value={cliente.lugar_nac} onChange={(v) => onChange({ lugar_nac: v })} auto={af['datos_cliente.lugar_nac']} />
       </div>
       <Field label="Domicilio" value={cliente.domicilio} onChange={(v) => onChange({ domicilio: v })} auto={af['datos_cliente.domicilio']} />
