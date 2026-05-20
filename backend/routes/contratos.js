@@ -151,7 +151,7 @@ router.post('/:id/token-cliente', (req, res, next) => {
 
 router.post('/', (req, res, next) => {
   try {
-    const { institucion_id, modelo_id, datos_cliente, datos_credito, datos_garantia, datos_firmas, no_contrato } =
+    const { institucion_id, modelo_id, datos_cliente, datos_credito, datos_garantia, datos_firmas, no_contrato, cliente_existente } =
       req.body || {};
     if (!institucion_id || !modelo_id) {
       return res.status(400).json({ error: 'institucion_id y modelo_id requeridos', code: 400 });
@@ -165,24 +165,46 @@ router.post('/', (req, res, next) => {
     if (!modelo)
       return res.status(400).json({ error: 'modelo_id no pertenece a la institución', code: 400 });
 
+    // F1 hotfix bloque 3: si el banco selecciona un cliente existente, la solicitud
+    // entra directo a 'revision_tenant'. Requiere datos_cliente.cliente_id válido.
+    let estadoInicial = 'en_curso';
+    if (cliente_existente === true) {
+      const clienteId = datos_cliente && datos_cliente.cliente_id;
+      if (!clienteId) {
+        return res.status(400).json({ error: 'cliente_existente=true requiere datos_cliente.cliente_id', code: 400 });
+      }
+      const cliente = db.prepare('SELECT id, institucion_id FROM clientes WHERE id = ?').get(clienteId);
+      if (!cliente || cliente.institucion_id !== institucion_id) {
+        return res.status(400).json({ error: 'cliente_id no pertenece a la institución', code: 400 });
+      }
+      estadoInicial = 'revision_tenant';
+    }
+
     const year = new Date().getFullYear();
     const noContrato = no_contrato || datos_firmas?.correlativo || nextCorrelativo(institucion_id, year);
     const info = db
       .prepare(
         `INSERT INTO contratos
          (institucion_id, modelo_id, no_contrato, estado, datos_cliente, datos_credito, datos_garantia, datos_firmas)
-         VALUES (?, ?, ?, 'en_curso', ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         institucion_id,
         modelo_id,
         noContrato,
+        estadoInicial,
         datos_cliente ? encrypt(JSON.stringify(datos_cliente)) : null,
         datos_credito ? JSON.stringify(datos_credito) : null,
         datos_garantia ? encrypt(JSON.stringify(datos_garantia)) : null,
         datos_firmas ? JSON.stringify(datos_firmas) : null
       );
     const row = db.prepare('SELECT * FROM contratos WHERE id = ?').get(info.lastInsertRowid);
+    audit(req, 'CONTRATO_CREADO', 'contrato', row.id, {
+      estado_inicial: estadoInicial,
+      modelo_id,
+      no_contrato: noContrato,
+      cliente_existente: !!cliente_existente,
+    });
     res.status(201).json(parseJsonFields(row));
   } catch (err) {
     if (err.code === 'SQLITE_CONSTRAINT_UNIQUE')
