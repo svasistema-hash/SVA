@@ -13,8 +13,8 @@ const {
   MARGIN_BOTTOM,
   MARGIN_LEFT,
   getCSSOficio,
-} = require('../shared/legal/formato-oficio');
-const CLAUSULAS_BASE = require('../shared/legal/clausulas-base.json');
+} = require('./shared/legal/formato-oficio');
+const CLAUSULAS_BASE = require('./shared/legal/clausulas-base.json');
 
 // Variables que SIEMPRE se renderizan como moneda formateada (ej. "Q18,500.00").
 // Si se agrega una variable monetaria futura, sumarla acá.

@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../db');
-const CLAUSULAS_BASE = require('../../shared/legal/clausulas-base.json');
+const CLAUSULAS_BASE = require('../shared/legal/clausulas-base.json');
 const { encrypt, decrypt } = require('../encryption');
 const { normalizeMoney } = require('../utils/money');
 
