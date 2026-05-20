@@ -271,6 +271,59 @@ router.post('/:slug/modelos', (req, res, next) => {
   }
 });
 
+// F1 hotfix P4: duplicar un modelo existente con todas sus cláusulas.
+// Útil para crear variantes (e.g. "Crédito Personal con seguro" vs original).
+// Body opcional: { nombre } — si no, se autogenera "<original> (copia)".
+router.post('/:slug/modelos/:id/duplicar', (req, res, next) => {
+  try {
+    const inst = db.prepare('SELECT id FROM instituciones WHERE slug = ?').get(req.params.slug);
+    if (!inst) return res.status(404).json({ error: 'Institución no encontrada', code: 404 });
+    if (!canAccess(req.user, inst.id))
+      return res.status(403).json({ error: 'Sin acceso', code: 403 });
+    const origen = db
+      .prepare('SELECT * FROM modelos WHERE id = ? AND institucion_id = ?')
+      .get(req.params.id, inst.id);
+    if (!origen) return res.status(404).json({ error: 'Modelo no encontrado', code: 404 });
+
+    const nombreNuevo = (req.body?.nombre || '').trim() || `${origen.nombre} (copia)`;
+
+    const tx = db.transaction(() => {
+      const info = db
+        .prepare(
+          `INSERT INTO modelos (institucion_id, nombre, tipo_garantia, clausulas, activo)
+           VALUES (?, ?, ?, ?, 1)`
+        )
+        .run(inst.id, nombreNuevo, origen.tipo_garantia, origen.clausulas);
+      const nuevoId = info.lastInsertRowid;
+
+      const clausulasOrigen = db
+        .prepare('SELECT * FROM clausulas WHERE modelo_id = ? ORDER BY orden')
+        .all(origen.id);
+      const ins = db.prepare(
+        `INSERT INTO clausulas (institucion_id, modelo_id, orden, codigo, titulo, texto_base, variables, obligatoria)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      );
+      for (const c of clausulasOrigen) {
+        ins.run(inst.id, nuevoId, c.orden, c.codigo, c.titulo, c.texto_base, c.variables, c.obligatoria);
+      }
+      return { nuevoId, clausulasCopiadas: clausulasOrigen.length };
+    });
+
+    const { nuevoId, clausulasCopiadas } = tx();
+    const row = db.prepare('SELECT * FROM modelos WHERE id = ?').get(nuevoId);
+    res.status(201).json({
+      ...row,
+      clausulas: JSON.parse(row.clausulas),
+      clausulas_copiadas: clausulasCopiadas,
+      duplicado_de: origen.id,
+    });
+  } catch (err) {
+    if (err.code === 'SQLITE_CONSTRAINT_UNIQUE')
+      return res.status(409).json({ error: 'Ya existe un modelo con ese nombre', code: 409 });
+    next(err);
+  }
+});
+
 router.get('/:slug/notarios', (req, res, next) => {
   try {
     const inst = db.prepare('SELECT id FROM instituciones WHERE slug = ?').get(req.params.slug);
