@@ -777,6 +777,10 @@ function nuevoFiadorVacio() {
 
 function Paso4({ garantia, onChange }) {
   const fiadores = garantia.fiadores || [];
+  const tipos = garantia.tipos || [];
+  const hipoteca = garantia.hipoteca || { finca: '', folio: '', libro: '', registro: REGISTROS_PROPIEDAD[0], direccion: '', area: '', valor: '' };
+  const prenda = garantia.prenda || { tipo_bien: 'Vehículo', marca: '', modelo: '', serie: '', placa: '', valor: '' };
+
   const setFiador = (i, patch) => {
     const fs = [...fiadores];
     fs[i] = { ...(fs[i] || {}), ...patch };
@@ -785,31 +789,113 @@ function Paso4({ garantia, onChange }) {
   const addFiador = () => onChange({ fiadores: [...fiadores, nuevoFiadorVacio()] });
   const removeFiador = (i) => onChange({ fiadores: fiadores.filter((_, idx) => idx !== i) });
 
+  const toggleTipo = (t) => {
+    const next = tipos.includes(t) ? tipos.filter((x) => x !== t) : [...tipos, t];
+    onChange({ tipos: next });
+  };
+
   return (
     <>
       <div className="card-h">
         <h3>Paso 4 · Garantías</h3>
-        <button className="btn btn-gold btn-sm" onClick={addFiador}>Agregar fiador</button>
       </div>
 
       <p className="muted" style={{ marginTop: 0, fontSize: 12 }}>
-        Cada fiador requiere la misma información que el cliente principal más el tipo de garantía que aporta.
+        Seleccione las garantías que respaldan este crédito. Pueden ser bienes del propio deudor
+        (hipoteca, prenda) o un fiador con su propia garantía. Puede combinar varias.
       </p>
 
-      {fiadores.length === 0 && (
-        <div className="empty">Aún no hay fiadores. Agregue uno o continúe sin garantías adicionales.</div>
-      )}
+      {/* Sección 1: garantías directas del deudor (sin necesidad de fiador) */}
+      <div className="card" style={{ background: '#faf9f4' }}>
+        <div className="card-h"><h3 style={{ fontSize: 13 }}>Garantía del deudor</h3></div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {fiadores.map((f, i) => (
-          <FiadorCard
-            key={i}
-            index={i}
-            fiador={f}
-            onPatch={(p) => setFiador(i, p)}
-            onRemove={() => removeFiador(i)}
-          />
-        ))}
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 14 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
+            <input type="checkbox" checked={tipos.includes('hipoteca')} onChange={() => toggleTipo('hipoteca')} />
+            Hipoteca sobre inmueble del deudor
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
+            <input type="checkbox" checked={tipos.includes('prenda')} onChange={() => toggleTipo('prenda')} />
+            Prenda sobre bien mueble del deudor
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
+            <input type="checkbox" checked={tipos.includes('ninguna')} onChange={() => toggleTipo('ninguna')} />
+            Sin garantía real (solo personal)
+          </label>
+        </div>
+
+        {tipos.includes('hipoteca') && (
+          <div className="card" style={{ background: 'var(--gold-pale)', borderColor: 'var(--gold-border)' }}>
+            <div className="card-h"><h3 style={{ fontSize: 12 }}>Datos del inmueble (hipoteca)</h3></div>
+            <div className="row-3">
+              <Field label="Finca No." value={hipoteca.finca} onChange={(v) => onChange({ hipoteca: { ...hipoteca, finca: v } })} />
+              <Field label="Folio" value={hipoteca.folio} onChange={(v) => onChange({ hipoteca: { ...hipoteca, folio: v } })} />
+              <Field label="Libro" value={hipoteca.libro} onChange={(v) => onChange({ hipoteca: { ...hipoteca, libro: v } })} />
+            </div>
+            <div className="field">
+              <label>Registro de la Propiedad</label>
+              <select className="select" value={hipoteca.registro} onChange={(e) => onChange({ hipoteca: { ...hipoteca, registro: e.target.value } })}>
+                {REGISTROS_PROPIEDAD.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+            <Field label="Dirección del inmueble" value={hipoteca.direccion} onChange={(v) => onChange({ hipoteca: { ...hipoteca, direccion: v } })} />
+            <div className="row-2">
+              <Field label="Área en m²" value={hipoteca.area} onChange={(v) => onChange({ hipoteca: { ...hipoteca, area: v } })} type="number" />
+              <Field label="Valor del inmueble (Q)" value={hipoteca.valor} onChange={(v) => onChange({ hipoteca: { ...hipoteca, valor: v } })} type="number" />
+            </div>
+          </div>
+        )}
+
+        {tipos.includes('prenda') && (
+          <div className="card" style={{ background: 'var(--gold-pale)', borderColor: 'var(--gold-border)', marginTop: 10 }}>
+            <div className="card-h"><h3 style={{ fontSize: 12 }}>Datos del bien mueble (prenda)</h3></div>
+            <div className="row-2">
+              <div className="field">
+                <label>Tipo de bien</label>
+                <select className="select" value={prenda.tipo_bien} onChange={(e) => onChange({ prenda: { ...prenda, tipo_bien: e.target.value } })}>
+                  {TIPOS_BIEN_PRENDA.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <Field label="Marca" value={prenda.marca} onChange={(v) => onChange({ prenda: { ...prenda, marca: v } })} />
+            </div>
+            <div className="row-2">
+              <Field label="Modelo y año" value={prenda.modelo} onChange={(v) => onChange({ prenda: { ...prenda, modelo: v } })} />
+              <Field label="Valor del bien (Q)" value={prenda.valor} onChange={(v) => onChange({ prenda: { ...prenda, valor: v } })} type="number" />
+            </div>
+            <div className="row-2">
+              <Field label="No. de serie / chasis" value={prenda.serie} onChange={(v) => onChange({ prenda: { ...prenda, serie: v } })} />
+              <Field label="Placa" value={prenda.placa} onChange={(v) => onChange({ prenda: { ...prenda, placa: v } })} />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Sección 2: fiadores (cada uno puede aportar personal/hipotecaria/prendaria) */}
+      <div className="card" style={{ marginTop: 14 }}>
+        <div className="card-h">
+          <h3 style={{ fontSize: 13 }}>Fiadores</h3>
+          <button className="btn btn-gold btn-sm" onClick={addFiador}>Agregar fiador</button>
+        </div>
+
+        <p className="muted" style={{ marginTop: 0, fontSize: 12 }}>
+          Cada fiador requiere la misma información que el cliente principal más el tipo de garantía que aporta.
+        </p>
+
+        {fiadores.length === 0 && (
+          <div className="empty" style={{ fontSize: 12 }}>Sin fiadores. La garantía será únicamente la del deudor seleccionada arriba.</div>
+        )}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {fiadores.map((f, i) => (
+            <FiadorCard
+              key={i}
+              index={i}
+              fiador={f}
+              onPatch={(p) => setFiador(i, p)}
+              onRemove={() => removeFiador(i)}
+            />
+          ))}
+        </div>
       </div>
     </>
   );
