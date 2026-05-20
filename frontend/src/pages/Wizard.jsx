@@ -528,7 +528,11 @@ function RadioGroup({ label, value, onChange, options, columns = 2, renderOption
 }
 
 function Paso3({ credito, onChange, cuentaPredeterminada }) {
-  const cuotaCalc = useMemo(
+  // F1 regla global: LexDocs NO calcula nada matemático. El banco ingresa los
+  // valores acordados manualmente. Mantenemos las funciones como SUGERENCIAS
+  // visuales (placeholder + botón "Aplicar sugerencia"), pero nunca sobreescriben
+  // lo que el usuario tipea.
+  const cuotaSugerida = useMemo(
     () =>
       calcularCuota({
         monto: credito.monto,
@@ -539,32 +543,19 @@ function Paso3({ credito, onChange, cuentaPredeterminada }) {
     [credito.monto, credito.tasa_ordinaria, credito.plazo_meses, credito.sistema_amort]
   );
 
-  const letrasCalc = useMemo(
+  const letrasSugeridas = useMemo(
     () => numeroALetras(credito.monto, credito.moneda),
     [credito.monto, credito.moneda]
   );
 
-  const fechaVencCalc = useMemo(
+  const fechaVencSugerida = useMemo(
     () => addMonthsISO(credito.fecha_inicio, credito.plazo_meses),
     [credito.fecha_inicio, credito.plazo_meses]
   );
 
-  useEffect(() => {
-    const cuotaFmt = cuotaCalc > 0 ? cuotaCalc.toFixed(2) : '';
-    if (cuotaFmt !== (credito.cuota_mensual || '')) onChange({ cuota_mensual: cuotaFmt });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cuotaCalc]);
-
-  useEffect(() => {
-    if (letrasCalc !== (credito.monto_letras || '')) onChange({ monto_letras: letrasCalc });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [letrasCalc]);
-
-  useEffect(() => {
-    if (fechaVencCalc !== (credito.fecha_vencimiento || '')) onChange({ fecha_vencimiento: fechaVencCalc });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fechaVencCalc]);
-
+  // La cuenta predeterminada del tenant SÍ se precarga si el campo está vacío
+  // y el tipo de pago la requiere. Esto NO es cálculo matemático, es default
+  // razonable de UI; el usuario puede borrarla.
   useEffect(() => {
     if (
       cuentaPredeterminada &&
@@ -576,7 +567,8 @@ function Paso3({ credito, onChange, cuentaPredeterminada }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cuentaPredeterminada, credito.tipo_pago]);
 
-  const totalPagar = cuotaCalc * (parseInt(credito.plazo_meses, 10) || 0);
+  const cuotaIngresada = parseFloat(credito.cuota_mensual) || 0;
+  const totalPagar = cuotaIngresada * (parseInt(credito.plazo_meses, 10) || 0);
   const totalInteres = totalPagar - (parseFloat(credito.monto) || 0);
   const diaInicio = parseInt(credito.dia_pago_inicio, 10) || 0;
   const diaFin = parseInt(credito.dia_pago_fin, 10) || 0;
@@ -597,12 +589,22 @@ function Paso3({ credito, onChange, cuentaPredeterminada }) {
         </div>
         <Field label="Monto" value={credito.monto} onChange={(v) => onChange({ monto: v })} type="number" />
         <div className="field">
-          <label>Monto en letras · auto</label>
+          <label>
+            Monto en letras
+            {letrasSugeridas && credito.monto_letras !== letrasSugeridas && (
+              <button
+                type="button"
+                onClick={() => onChange({ monto_letras: letrasSugeridas })}
+                style={{ marginLeft: 8, fontSize: 10, padding: '2px 6px', background: 'var(--gold-soft)', border: '1px solid var(--gold-border)', borderRadius: 3, cursor: 'pointer' }}
+              >Usar sugerencia</button>
+            )}
+          </label>
           <input
             className="input"
-            value={letrasCalc}
-            readOnly
-            style={{ background: 'var(--gold-soft)', borderColor: 'var(--gold-border)', fontSize: 11.5 }}
+            value={credito.monto_letras || ''}
+            onChange={(e) => onChange({ monto_letras: e.target.value })}
+            placeholder={letrasSugeridas ? `Sugerencia: ${letrasSugeridas}` : 'Escriba el monto en letras'}
+            style={{ fontSize: 11.5 }}
           />
         </div>
       </div>
@@ -633,13 +635,23 @@ function Paso3({ credito, onChange, cuentaPredeterminada }) {
         </div>
         <Field label="Fecha primera cuota" value={credito.fecha_inicio} onChange={(v) => onChange({ fecha_inicio: v })} type="date" />
         <div className="field">
-          <label>Fecha vencimiento · auto</label>
+          <label>
+            Fecha vencimiento
+            {fechaVencSugerida && credito.fecha_vencimiento !== fechaVencSugerida && (
+              <button
+                type="button"
+                onClick={() => onChange({ fecha_vencimiento: fechaVencSugerida })}
+                style={{ marginLeft: 8, fontSize: 10, padding: '2px 6px', background: 'var(--gold-soft)', border: '1px solid var(--gold-border)', borderRadius: 3, cursor: 'pointer' }}
+              >Usar sugerencia</button>
+            )}
+          </label>
           <input
             className="input"
-            value={fechaVencCalc ? fechaLarga(fechaVencCalc) : ''}
-            readOnly
-            placeholder="Se calcula desde primera cuota + plazo"
-            style={{ background: 'var(--gold-pale)', borderColor: 'var(--gold-border)', fontSize: 12 }}
+            type="date"
+            value={credito.fecha_vencimiento || ''}
+            onChange={(e) => onChange({ fecha_vencimiento: e.target.value })}
+            placeholder={fechaVencSugerida ? `Sugerencia: ${fechaLarga(fechaVencSugerida)}` : 'YYYY-MM-DD'}
+            style={{ fontSize: 12 }}
           />
         </div>
       </div>
@@ -647,25 +659,52 @@ function Paso3({ credito, onChange, cuentaPredeterminada }) {
       <RadioGroup label="Sistema de amortización" value={credito.sistema_amort} onChange={(v) => onChange({ sistema_amort: v })} options={['Cuotas niveladas', 'Bullet']} columns={2} />
 
       <div className="card" style={{ background: 'var(--gold-soft)', borderColor: 'var(--gold-border)' }}>
-        <div className="card-h"><h3 style={{ fontSize: 13 }}>Cálculo automático</h3></div>
+        <div className="card-h">
+          <h3 style={{ fontSize: 13 }}>Cuota mensual</h3>
+          {cuotaSugerida > 0 && credito.cuota_mensual !== cuotaSugerida.toFixed(2) && (
+            <button
+              type="button"
+              onClick={() => onChange({ cuota_mensual: cuotaSugerida.toFixed(2) })}
+              style={{ fontSize: 11, padding: '4px 10px', background: '#fff', border: '1px solid var(--gold)', borderRadius: 3, cursor: 'pointer' }}
+            >
+              Usar sugerencia: {formatMoney(cuotaSugerida, credito.moneda)}
+            </button>
+          )}
+        </div>
         <div className="row-3">
           <div className="field">
-            <label>Cuota mensual · auto</label>
-            <input className="input" value={cuotaCalc > 0 ? formatMoney(cuotaCalc, credito.moneda) : ''} readOnly style={{ background: '#fff', borderColor: 'var(--gold)', fontWeight: 600 }} />
+            <label>Cuota mensual (ingreso manual)</label>
+            <input
+              className="input"
+              type="number"
+              step="0.01"
+              value={credito.cuota_mensual || ''}
+              onChange={(e) => onChange({ cuota_mensual: e.target.value })}
+              placeholder={cuotaSugerida > 0 ? `Sugerencia: ${cuotaSugerida.toFixed(2)}` : 'Cuota acordada'}
+              style={{ background: '#fff', borderColor: 'var(--gold)', fontWeight: 600 }}
+            />
           </div>
           <div className="field">
-            <label>Total a pagar</label>
-            <input className="input" value={totalPagar > 0 ? formatMoney(totalPagar, credito.moneda) : ''} readOnly style={{ background: '#fff', borderColor: 'var(--gold-border)' }} />
+            <label>Total a pagar (cuota × plazo)</label>
+            <input
+              className="input"
+              value={totalPagar > 0 ? formatMoney(totalPagar, credito.moneda) : ''}
+              readOnly
+              style={{ background: '#faf9f4', borderColor: 'var(--border)', color: 'var(--text-dim)' }}
+            />
           </div>
           <div className="field">
-            <label>Total intereses</label>
-            <input className="input" value={totalInteres > 0 ? formatMoney(totalInteres, credito.moneda) : ''} readOnly style={{ background: '#fff', borderColor: 'var(--gold-border)' }} />
+            <label>Total intereses (informativo)</label>
+            <input
+              className="input"
+              value={totalInteres > 0 ? formatMoney(totalInteres, credito.moneda) : ''}
+              readOnly
+              style={{ background: '#faf9f4', borderColor: 'var(--border)', color: 'var(--text-dim)' }}
+            />
           </div>
         </div>
         <div className="muted" style={{ fontSize: 11 }}>
-          {credito.sistema_amort === 'Bullet'
-            ? 'Bullet: sólo intereses mensuales · capital al vencimiento.'
-            : 'Sistema francés: cuotas niveladas con amortización gradual del capital.'}
+          Ingrese la cuota mensual acordada. La sugerencia se calcula con sistema francés (Cuotas niveladas) o Bullet según corresponda, solo como referencia. Total a pagar y total intereses se actualizan según el valor que ingrese.
         </div>
       </div>
 
