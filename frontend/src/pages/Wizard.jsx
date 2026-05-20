@@ -764,14 +764,14 @@ const ESTADOS_CIVILES_FIADOR = [
 ];
 
 function nuevoFiadorVacio() {
+  // Fiadores aportan únicamente fianza personal solidaria.
+  // Las garantías reales (hipoteca / prenda) se declaran en "Garantía del deudor".
   return {
     nombre: '', dpi: '', fecha_nac: '', lugar_nac: '',
     estado_civil: '', conyuge_nombre: '', conyuge_dpi: '',
     profesion: '', nit: '', telefono: '', email: '',
     domicilio: '', recibo_path: null,
     tipo_garantia: 'personal',
-    hipoteca: { finca: '', folio: '', libro: '', registro: REGISTROS_PROPIEDAD[0], direccion: '', area: '', valor: '' },
-    prenda: { tipo_bien: 'Vehículo', marca: '', modelo: '', serie: '', placa: '', valor: '' },
   };
 }
 
@@ -904,7 +904,9 @@ function Paso4({ garantia, onChange }) {
 function FiadorCard({ index, fiador, onPatch, onRemove }) {
   const [expanded, setExpanded] = useState(true);
 
-  const TIPO_LABEL = { personal: 'Personal', hipotecaria: 'Hipotecaria', prendaria: 'Prendaria' };
+  // Los fiadores ahora aportan únicamente fianza personal (solidaria,
+  // mancomunada y de pago). Las garantías reales (hipoteca / prenda) se
+  // declaran arriba en "Garantía del deudor".
   const headerNombre = fiador.nombre || `Fiador ${index + 1}`;
 
   return (
@@ -926,7 +928,7 @@ function FiadorCard({ index, fiador, onPatch, onRemove }) {
             Fiador {index + 1} — {headerNombre}
           </div>
           <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
-            {TIPO_LABEL[fiador.tipo_garantia] || 'Personal'}
+            Fianza solidaria
             {fiador.dpi ? ` · DPI ${fiador.dpi}` : ''}
           </div>
         </div>
@@ -985,60 +987,11 @@ function FiadorCard({ index, fiador, onPatch, onRemove }) {
             hint="El sistema extrae la dirección del recibo automáticamente."
           />
 
-          <SectionLabel>Garantía que aporta</SectionLabel>
-          <RadioGroup
-            label=""
-            value={fiador.tipo_garantia}
-            onChange={(v) => onPatch({ tipo_garantia: v })}
-            options={['personal', 'hipotecaria', 'prendaria']}
-            columns={3}
-            renderOption={(k) => ({ personal: 'Personal — solo fianza', hipotecaria: 'Hipotecaria — bien inmueble', prendaria: 'Prendaria — bien mueble' })[k]}
-          />
-
-          {fiador.tipo_garantia === 'hipotecaria' && (
-            <div className="card" style={{ background: 'var(--gold-pale)', borderColor: 'var(--gold-border)' }}>
-              <div className="card-h"><h3 style={{ fontSize: 11 }}>Datos del inmueble</h3></div>
-              <div className="row-3">
-                <Field label="Finca No." value={fiador.hipoteca?.finca} onChange={(v) => onPatch({ hipoteca: { ...(fiador.hipoteca || {}), finca: v } })} />
-                <Field label="Folio" value={fiador.hipoteca?.folio} onChange={(v) => onPatch({ hipoteca: { ...(fiador.hipoteca || {}), folio: v } })} />
-                <Field label="Libro" value={fiador.hipoteca?.libro} onChange={(v) => onPatch({ hipoteca: { ...(fiador.hipoteca || {}), libro: v } })} />
-              </div>
-              <div className="field">
-                <label>Registro de la Propiedad</label>
-                <select className="select" value={fiador.hipoteca?.registro || ''} onChange={(e) => onPatch({ hipoteca: { ...(fiador.hipoteca || {}), registro: e.target.value } })}>
-                  {REGISTROS_PROPIEDAD.map((r) => <option key={r} value={r}>{r}</option>)}
-                </select>
-              </div>
-              <Field label="Dirección del inmueble" value={fiador.hipoteca?.direccion} onChange={(v) => onPatch({ hipoteca: { ...(fiador.hipoteca || {}), direccion: v } })} />
-              <div className="row-2">
-                <Field label="Área en m²" value={fiador.hipoteca?.area} onChange={(v) => onPatch({ hipoteca: { ...(fiador.hipoteca || {}), area: v } })} type="number" />
-                <Field label="Valor del inmueble (Q)" value={fiador.hipoteca?.valor} onChange={(v) => onPatch({ hipoteca: { ...(fiador.hipoteca || {}), valor: v } })} type="number" />
-              </div>
-            </div>
-          )}
-
-          {fiador.tipo_garantia === 'prendaria' && (
-            <div className="card" style={{ background: 'var(--gold-pale)', borderColor: 'var(--gold-border)' }}>
-              <div className="card-h"><h3 style={{ fontSize: 11 }}>Datos del bien mueble</h3></div>
-              <div className="row-2">
-                <div className="field">
-                  <label>Tipo de bien</label>
-                  <select className="select" value={fiador.prenda?.tipo_bien || 'Vehículo'} onChange={(e) => onPatch({ prenda: { ...(fiador.prenda || {}), tipo_bien: e.target.value } })}>
-                    {TIPOS_BIEN_PRENDA.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-                <Field label="Marca" value={fiador.prenda?.marca} onChange={(v) => onPatch({ prenda: { ...(fiador.prenda || {}), marca: v } })} />
-              </div>
-              <div className="row-2">
-                <Field label="Modelo y año" value={fiador.prenda?.modelo} onChange={(v) => onPatch({ prenda: { ...(fiador.prenda || {}), modelo: v } })} />
-                <Field label="Valor del bien (Q)" value={fiador.prenda?.valor} onChange={(v) => onPatch({ prenda: { ...(fiador.prenda || {}), valor: v } })} type="number" />
-              </div>
-              <div className="row-2">
-                <Field label="No. de serie / chasis" value={fiador.prenda?.serie} onChange={(v) => onPatch({ prenda: { ...(fiador.prenda || {}), serie: v } })} />
-                <Field label="Placa" value={fiador.prenda?.placa} onChange={(v) => onPatch({ prenda: { ...(fiador.prenda || {}), placa: v } })} />
-              </div>
-            </div>
-          )}
+          <div style={{ background: 'var(--bg-subtle)', padding: '10px 12px', borderRadius: 4, fontSize: 12, color: 'var(--text-secondary)', marginTop: 14 }}>
+            Este fiador aporta fianza solidaria, mancomunada y de pago.
+            Las garantías reales (hipoteca o prenda) se declaran arriba en
+            la sección «Garantía del deudor».
+          </div>
         </div>
       )}
     </div>
