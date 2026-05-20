@@ -447,7 +447,22 @@ function ClienteNuevo({ cliente, onScan, onCancel, onSave }) {
   );
 }
 
+// Edad calculada desde fecha_nacimiento (YYYY-MM-DD).
+// F1 regla global: la edad SIEMPRE se calcula, nunca se ingresa manual.
+function calcularEdad(fechaNac) {
+  if (!fechaNac) return null;
+  const f = new Date(fechaNac);
+  if (Number.isNaN(f.getTime())) return null;
+  const hoy = new Date();
+  let edad = hoy.getFullYear() - f.getFullYear();
+  const m = hoy.getMonth() - f.getMonth();
+  if (m < 0 || (m === 0 && hoy.getDate() < f.getDate())) edad--;
+  return edad >= 0 ? edad : null;
+}
+
 function Paso2({ cliente, af, onChange, onScanRecibo, reciboPath }) {
+  // F1 regla global: la edad SIEMPRE se calcula desde fecha_nacimiento, nunca manual.
+  const edad = calcularEdad(cliente.fecha_nac);
   return (
     <>
       <div className="card-h"><h3>Paso 2 · Verificar datos del cliente</h3></div>
@@ -473,8 +488,18 @@ function Paso2({ cliente, af, onChange, onScanRecibo, reciboPath }) {
         </div>
       </div>
       <Field label="Profesión" value={cliente.profesion} onChange={(v) => onChange({ profesion: v })} auto={af['datos_cliente.profesion']} />
-      <div className="row-2">
+      <div className="row-3">
         <Field label="Fecha nacimiento" value={cliente.fecha_nac} onChange={(v) => onChange({ fecha_nac: v })} type="date" auto={af['datos_cliente.fecha_nac']} />
+        <div className="field">
+          <label>Edad (calculada)</label>
+          <input
+            className="input"
+            value={edad != null ? `${edad} años` : ''}
+            readOnly
+            placeholder={cliente.fecha_nac ? 'Fecha inválida' : 'Ingrese fecha de nacimiento'}
+            style={{ background: '#faf9f4', color: edad != null ? 'var(--text)' : 'var(--text-dim)' }}
+          />
+        </div>
         <Field label="Lugar nacimiento" value={cliente.lugar_nac} onChange={(v) => onChange({ lugar_nac: v })} auto={af['datos_cliente.lugar_nac']} />
       </div>
       <Field label="Domicilio" value={cliente.domicilio} onChange={(v) => onChange({ domicilio: v })} auto={af['datos_cliente.domicilio']} />
@@ -528,7 +553,11 @@ function RadioGroup({ label, value, onChange, options, columns = 2, renderOption
 }
 
 function Paso3({ credito, onChange, cuentaPredeterminada }) {
-  const cuotaCalc = useMemo(
+  // F1 regla global: LexDocs NO calcula nada matemático. El banco ingresa los
+  // valores acordados manualmente. Mantenemos las funciones como SUGERENCIAS
+  // visuales (placeholder + botón "Aplicar sugerencia"), pero nunca sobreescriben
+  // lo que el usuario tipea.
+  const cuotaSugerida = useMemo(
     () =>
       calcularCuota({
         monto: credito.monto,
@@ -539,32 +568,19 @@ function Paso3({ credito, onChange, cuentaPredeterminada }) {
     [credito.monto, credito.tasa_ordinaria, credito.plazo_meses, credito.sistema_amort]
   );
 
-  const letrasCalc = useMemo(
+  const letrasSugeridas = useMemo(
     () => numeroALetras(credito.monto, credito.moneda),
     [credito.monto, credito.moneda]
   );
 
-  const fechaVencCalc = useMemo(
+  const fechaVencSugerida = useMemo(
     () => addMonthsISO(credito.fecha_inicio, credito.plazo_meses),
     [credito.fecha_inicio, credito.plazo_meses]
   );
 
-  useEffect(() => {
-    const cuotaFmt = cuotaCalc > 0 ? cuotaCalc.toFixed(2) : '';
-    if (cuotaFmt !== (credito.cuota_mensual || '')) onChange({ cuota_mensual: cuotaFmt });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cuotaCalc]);
-
-  useEffect(() => {
-    if (letrasCalc !== (credito.monto_letras || '')) onChange({ monto_letras: letrasCalc });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [letrasCalc]);
-
-  useEffect(() => {
-    if (fechaVencCalc !== (credito.fecha_vencimiento || '')) onChange({ fecha_vencimiento: fechaVencCalc });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fechaVencCalc]);
-
+  // La cuenta predeterminada del tenant SÍ se precarga si el campo está vacío
+  // y el tipo de pago la requiere. Esto NO es cálculo matemático, es default
+  // razonable de UI; el usuario puede borrarla.
   useEffect(() => {
     if (
       cuentaPredeterminada &&
@@ -576,7 +592,8 @@ function Paso3({ credito, onChange, cuentaPredeterminada }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cuentaPredeterminada, credito.tipo_pago]);
 
-  const totalPagar = cuotaCalc * (parseInt(credito.plazo_meses, 10) || 0);
+  const cuotaIngresada = parseFloat(credito.cuota_mensual) || 0;
+  const totalPagar = cuotaIngresada * (parseInt(credito.plazo_meses, 10) || 0);
   const totalInteres = totalPagar - (parseFloat(credito.monto) || 0);
   const diaInicio = parseInt(credito.dia_pago_inicio, 10) || 0;
   const diaFin = parseInt(credito.dia_pago_fin, 10) || 0;
@@ -597,12 +614,22 @@ function Paso3({ credito, onChange, cuentaPredeterminada }) {
         </div>
         <Field label="Monto" value={credito.monto} onChange={(v) => onChange({ monto: v })} type="number" />
         <div className="field">
-          <label>Monto en letras · auto</label>
+          <label>
+            Monto en letras
+            {letrasSugeridas && credito.monto_letras !== letrasSugeridas && (
+              <button
+                type="button"
+                onClick={() => onChange({ monto_letras: letrasSugeridas })}
+                style={{ marginLeft: 8, fontSize: 10, padding: '2px 6px', background: 'var(--gold-soft)', border: '1px solid var(--gold-border)', borderRadius: 3, cursor: 'pointer' }}
+              >Usar sugerencia</button>
+            )}
+          </label>
           <input
             className="input"
-            value={letrasCalc}
-            readOnly
-            style={{ background: 'var(--gold-soft)', borderColor: 'var(--gold-border)', fontSize: 11.5 }}
+            value={credito.monto_letras || ''}
+            onChange={(e) => onChange({ monto_letras: e.target.value })}
+            placeholder={letrasSugeridas ? `Sugerencia: ${letrasSugeridas}` : 'Escriba el monto en letras'}
+            style={{ fontSize: 11.5 }}
           />
         </div>
       </div>
@@ -633,13 +660,23 @@ function Paso3({ credito, onChange, cuentaPredeterminada }) {
         </div>
         <Field label="Fecha primera cuota" value={credito.fecha_inicio} onChange={(v) => onChange({ fecha_inicio: v })} type="date" />
         <div className="field">
-          <label>Fecha vencimiento · auto</label>
+          <label>
+            Fecha vencimiento
+            {fechaVencSugerida && credito.fecha_vencimiento !== fechaVencSugerida && (
+              <button
+                type="button"
+                onClick={() => onChange({ fecha_vencimiento: fechaVencSugerida })}
+                style={{ marginLeft: 8, fontSize: 10, padding: '2px 6px', background: 'var(--gold-soft)', border: '1px solid var(--gold-border)', borderRadius: 3, cursor: 'pointer' }}
+              >Usar sugerencia</button>
+            )}
+          </label>
           <input
             className="input"
-            value={fechaVencCalc ? fechaLarga(fechaVencCalc) : ''}
-            readOnly
-            placeholder="Se calcula desde primera cuota + plazo"
-            style={{ background: 'var(--gold-pale)', borderColor: 'var(--gold-border)', fontSize: 12 }}
+            type="date"
+            value={credito.fecha_vencimiento || ''}
+            onChange={(e) => onChange({ fecha_vencimiento: e.target.value })}
+            placeholder={fechaVencSugerida ? `Sugerencia: ${fechaLarga(fechaVencSugerida)}` : 'YYYY-MM-DD'}
+            style={{ fontSize: 12 }}
           />
         </div>
       </div>
@@ -647,25 +684,52 @@ function Paso3({ credito, onChange, cuentaPredeterminada }) {
       <RadioGroup label="Sistema de amortización" value={credito.sistema_amort} onChange={(v) => onChange({ sistema_amort: v })} options={['Cuotas niveladas', 'Bullet']} columns={2} />
 
       <div className="card" style={{ background: 'var(--gold-soft)', borderColor: 'var(--gold-border)' }}>
-        <div className="card-h"><h3 style={{ fontSize: 13 }}>Cálculo automático</h3></div>
+        <div className="card-h">
+          <h3 style={{ fontSize: 13 }}>Cuota mensual</h3>
+          {cuotaSugerida > 0 && credito.cuota_mensual !== cuotaSugerida.toFixed(2) && (
+            <button
+              type="button"
+              onClick={() => onChange({ cuota_mensual: cuotaSugerida.toFixed(2) })}
+              style={{ fontSize: 11, padding: '4px 10px', background: '#fff', border: '1px solid var(--gold)', borderRadius: 3, cursor: 'pointer' }}
+            >
+              Usar sugerencia: {formatMoney(cuotaSugerida, credito.moneda)}
+            </button>
+          )}
+        </div>
         <div className="row-3">
           <div className="field">
-            <label>Cuota mensual · auto</label>
-            <input className="input" value={cuotaCalc > 0 ? formatMoney(cuotaCalc, credito.moneda) : ''} readOnly style={{ background: '#fff', borderColor: 'var(--gold)', fontWeight: 600 }} />
+            <label>Cuota mensual (ingreso manual)</label>
+            <input
+              className="input"
+              type="number"
+              step="0.01"
+              value={credito.cuota_mensual || ''}
+              onChange={(e) => onChange({ cuota_mensual: e.target.value })}
+              placeholder={cuotaSugerida > 0 ? `Sugerencia: ${cuotaSugerida.toFixed(2)}` : 'Cuota acordada'}
+              style={{ background: '#fff', borderColor: 'var(--gold)', fontWeight: 600 }}
+            />
           </div>
           <div className="field">
-            <label>Total a pagar</label>
-            <input className="input" value={totalPagar > 0 ? formatMoney(totalPagar, credito.moneda) : ''} readOnly style={{ background: '#fff', borderColor: 'var(--gold-border)' }} />
+            <label>Total a pagar (cuota × plazo)</label>
+            <input
+              className="input"
+              value={totalPagar > 0 ? formatMoney(totalPagar, credito.moneda) : ''}
+              readOnly
+              style={{ background: '#faf9f4', borderColor: 'var(--border)', color: 'var(--text-dim)' }}
+            />
           </div>
           <div className="field">
-            <label>Total intereses</label>
-            <input className="input" value={totalInteres > 0 ? formatMoney(totalInteres, credito.moneda) : ''} readOnly style={{ background: '#fff', borderColor: 'var(--gold-border)' }} />
+            <label>Total intereses (informativo)</label>
+            <input
+              className="input"
+              value={totalInteres > 0 ? formatMoney(totalInteres, credito.moneda) : ''}
+              readOnly
+              style={{ background: '#faf9f4', borderColor: 'var(--border)', color: 'var(--text-dim)' }}
+            />
           </div>
         </div>
         <div className="muted" style={{ fontSize: 11 }}>
-          {credito.sistema_amort === 'Bullet'
-            ? 'Bullet: sólo intereses mensuales · capital al vencimiento.'
-            : 'Sistema francés: cuotas niveladas con amortización gradual del capital.'}
+          Ingrese la cuota mensual acordada. La sugerencia se calcula con sistema francés (Cuotas niveladas) o Bullet según corresponda, solo como referencia. Total a pagar y total intereses se actualizan según el valor que ingrese.
         </div>
       </div>
 
@@ -725,19 +789,23 @@ const ESTADOS_CIVILES_FIADOR = [
 ];
 
 function nuevoFiadorVacio() {
+  // Fiadores aportan únicamente fianza personal solidaria.
+  // Las garantías reales (hipoteca / prenda) se declaran en "Garantía del deudor".
   return {
     nombre: '', dpi: '', fecha_nac: '', lugar_nac: '',
     estado_civil: '', conyuge_nombre: '', conyuge_dpi: '',
     profesion: '', nit: '', telefono: '', email: '',
     domicilio: '', recibo_path: null,
     tipo_garantia: 'personal',
-    hipoteca: { finca: '', folio: '', libro: '', registro: REGISTROS_PROPIEDAD[0], direccion: '', area: '', valor: '' },
-    prenda: { tipo_bien: 'Vehículo', marca: '', modelo: '', serie: '', placa: '', valor: '' },
   };
 }
 
 function Paso4({ garantia, onChange }) {
   const fiadores = garantia.fiadores || [];
+  const tipos = garantia.tipos || [];
+  const hipoteca = garantia.hipoteca || { finca: '', folio: '', libro: '', registro: REGISTROS_PROPIEDAD[0], direccion: '', area: '', valor: '' };
+  const prenda = garantia.prenda || { tipo_bien: 'Vehículo', marca: '', modelo: '', serie: '', placa: '', valor: '' };
+
   const setFiador = (i, patch) => {
     const fs = [...fiadores];
     fs[i] = { ...(fs[i] || {}), ...patch };
@@ -746,31 +814,113 @@ function Paso4({ garantia, onChange }) {
   const addFiador = () => onChange({ fiadores: [...fiadores, nuevoFiadorVacio()] });
   const removeFiador = (i) => onChange({ fiadores: fiadores.filter((_, idx) => idx !== i) });
 
+  const toggleTipo = (t) => {
+    const next = tipos.includes(t) ? tipos.filter((x) => x !== t) : [...tipos, t];
+    onChange({ tipos: next });
+  };
+
   return (
     <>
       <div className="card-h">
         <h3>Paso 4 · Garantías</h3>
-        <button className="btn btn-gold btn-sm" onClick={addFiador}>Agregar fiador</button>
       </div>
 
       <p className="muted" style={{ marginTop: 0, fontSize: 12 }}>
-        Cada fiador requiere la misma información que el cliente principal más el tipo de garantía que aporta.
+        Seleccione las garantías que respaldan este crédito. Pueden ser bienes del propio deudor
+        (hipoteca, prenda) o un fiador con su propia garantía. Puede combinar varias.
       </p>
 
-      {fiadores.length === 0 && (
-        <div className="empty">Aún no hay fiadores. Agregue uno o continúe sin garantes adicionales.</div>
-      )}
+      {/* Sección 1: garantías directas del deudor (sin necesidad de fiador) */}
+      <div className="card" style={{ background: '#faf9f4' }}>
+        <div className="card-h"><h3 style={{ fontSize: 13 }}>Garantía del deudor</h3></div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {fiadores.map((f, i) => (
-          <FiadorCard
-            key={i}
-            index={i}
-            fiador={f}
-            onPatch={(p) => setFiador(i, p)}
-            onRemove={() => removeFiador(i)}
-          />
-        ))}
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 14 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
+            <input type="checkbox" checked={tipos.includes('hipoteca')} onChange={() => toggleTipo('hipoteca')} />
+            Hipoteca sobre inmueble del deudor
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
+            <input type="checkbox" checked={tipos.includes('prenda')} onChange={() => toggleTipo('prenda')} />
+            Prenda sobre bien mueble del deudor
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
+            <input type="checkbox" checked={tipos.includes('ninguna')} onChange={() => toggleTipo('ninguna')} />
+            Sin garantía real (solo personal)
+          </label>
+        </div>
+
+        {tipos.includes('hipoteca') && (
+          <div className="card" style={{ background: 'var(--gold-pale)', borderColor: 'var(--gold-border)' }}>
+            <div className="card-h"><h3 style={{ fontSize: 12 }}>Datos del inmueble (hipoteca)</h3></div>
+            <div className="row-3">
+              <Field label="Finca No." value={hipoteca.finca} onChange={(v) => onChange({ hipoteca: { ...hipoteca, finca: v } })} />
+              <Field label="Folio" value={hipoteca.folio} onChange={(v) => onChange({ hipoteca: { ...hipoteca, folio: v } })} />
+              <Field label="Libro" value={hipoteca.libro} onChange={(v) => onChange({ hipoteca: { ...hipoteca, libro: v } })} />
+            </div>
+            <div className="field">
+              <label>Registro de la Propiedad</label>
+              <select className="select" value={hipoteca.registro} onChange={(e) => onChange({ hipoteca: { ...hipoteca, registro: e.target.value } })}>
+                {REGISTROS_PROPIEDAD.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+            <Field label="Dirección del inmueble" value={hipoteca.direccion} onChange={(v) => onChange({ hipoteca: { ...hipoteca, direccion: v } })} />
+            <div className="row-2">
+              <Field label="Área en m²" value={hipoteca.area} onChange={(v) => onChange({ hipoteca: { ...hipoteca, area: v } })} type="number" />
+              <Field label="Valor del inmueble (Q)" value={hipoteca.valor} onChange={(v) => onChange({ hipoteca: { ...hipoteca, valor: v } })} type="number" />
+            </div>
+          </div>
+        )}
+
+        {tipos.includes('prenda') && (
+          <div className="card" style={{ background: 'var(--gold-pale)', borderColor: 'var(--gold-border)', marginTop: 10 }}>
+            <div className="card-h"><h3 style={{ fontSize: 12 }}>Datos del bien mueble (prenda)</h3></div>
+            <div className="row-2">
+              <div className="field">
+                <label>Tipo de bien</label>
+                <select className="select" value={prenda.tipo_bien} onChange={(e) => onChange({ prenda: { ...prenda, tipo_bien: e.target.value } })}>
+                  {TIPOS_BIEN_PRENDA.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <Field label="Marca" value={prenda.marca} onChange={(v) => onChange({ prenda: { ...prenda, marca: v } })} />
+            </div>
+            <div className="row-2">
+              <Field label="Modelo y año" value={prenda.modelo} onChange={(v) => onChange({ prenda: { ...prenda, modelo: v } })} />
+              <Field label="Valor del bien (Q)" value={prenda.valor} onChange={(v) => onChange({ prenda: { ...prenda, valor: v } })} type="number" />
+            </div>
+            <div className="row-2">
+              <Field label="No. de serie / chasis" value={prenda.serie} onChange={(v) => onChange({ prenda: { ...prenda, serie: v } })} />
+              <Field label="Placa" value={prenda.placa} onChange={(v) => onChange({ prenda: { ...prenda, placa: v } })} />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Sección 2: fiadores (cada uno puede aportar personal/hipotecaria/prendaria) */}
+      <div className="card" style={{ marginTop: 14 }}>
+        <div className="card-h">
+          <h3 style={{ fontSize: 13 }}>Fiadores</h3>
+          <button className="btn btn-gold btn-sm" onClick={addFiador}>Agregar fiador</button>
+        </div>
+
+        <p className="muted" style={{ marginTop: 0, fontSize: 12 }}>
+          Cada fiador requiere la misma información que el cliente principal más el tipo de garantía que aporta.
+        </p>
+
+        {fiadores.length === 0 && (
+          <div className="empty" style={{ fontSize: 12 }}>Sin fiadores. La garantía será únicamente la del deudor seleccionada arriba.</div>
+        )}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {fiadores.map((f, i) => (
+            <FiadorCard
+              key={i}
+              index={i}
+              fiador={f}
+              onPatch={(p) => setFiador(i, p)}
+              onRemove={() => removeFiador(i)}
+            />
+          ))}
+        </div>
       </div>
     </>
   );
@@ -779,7 +929,9 @@ function Paso4({ garantia, onChange }) {
 function FiadorCard({ index, fiador, onPatch, onRemove }) {
   const [expanded, setExpanded] = useState(true);
 
-  const TIPO_LABEL = { personal: 'Personal', hipotecaria: 'Hipotecaria', prendaria: 'Prendaria' };
+  // Los fiadores ahora aportan únicamente fianza personal (solidaria,
+  // mancomunada y de pago). Las garantías reales (hipoteca / prenda) se
+  // declaran arriba en "Garantía del deudor".
   const headerNombre = fiador.nombre || `Fiador ${index + 1}`;
 
   return (
@@ -801,7 +953,7 @@ function FiadorCard({ index, fiador, onPatch, onRemove }) {
             Fiador {index + 1} — {headerNombre}
           </div>
           <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
-            {TIPO_LABEL[fiador.tipo_garantia] || 'Personal'}
+            Fianza solidaria
             {fiador.dpi ? ` · DPI ${fiador.dpi}` : ''}
           </div>
         </div>
@@ -860,60 +1012,11 @@ function FiadorCard({ index, fiador, onPatch, onRemove }) {
             hint="El sistema extrae la dirección del recibo automáticamente."
           />
 
-          <SectionLabel>Garantía que aporta</SectionLabel>
-          <RadioGroup
-            label=""
-            value={fiador.tipo_garantia}
-            onChange={(v) => onPatch({ tipo_garantia: v })}
-            options={['personal', 'hipotecaria', 'prendaria']}
-            columns={3}
-            renderOption={(k) => ({ personal: 'Personal — solo fianza', hipotecaria: 'Hipotecaria — bien inmueble', prendaria: 'Prendaria — bien mueble' })[k]}
-          />
-
-          {fiador.tipo_garantia === 'hipotecaria' && (
-            <div className="card" style={{ background: 'var(--gold-pale)', borderColor: 'var(--gold-border)' }}>
-              <div className="card-h"><h3 style={{ fontSize: 11 }}>Datos del inmueble</h3></div>
-              <div className="row-3">
-                <Field label="Finca No." value={fiador.hipoteca?.finca} onChange={(v) => onPatch({ hipoteca: { ...(fiador.hipoteca || {}), finca: v } })} />
-                <Field label="Folio" value={fiador.hipoteca?.folio} onChange={(v) => onPatch({ hipoteca: { ...(fiador.hipoteca || {}), folio: v } })} />
-                <Field label="Libro" value={fiador.hipoteca?.libro} onChange={(v) => onPatch({ hipoteca: { ...(fiador.hipoteca || {}), libro: v } })} />
-              </div>
-              <div className="field">
-                <label>Registro de la Propiedad</label>
-                <select className="select" value={fiador.hipoteca?.registro || ''} onChange={(e) => onPatch({ hipoteca: { ...(fiador.hipoteca || {}), registro: e.target.value } })}>
-                  {REGISTROS_PROPIEDAD.map((r) => <option key={r} value={r}>{r}</option>)}
-                </select>
-              </div>
-              <Field label="Dirección del inmueble" value={fiador.hipoteca?.direccion} onChange={(v) => onPatch({ hipoteca: { ...(fiador.hipoteca || {}), direccion: v } })} />
-              <div className="row-2">
-                <Field label="Área en m²" value={fiador.hipoteca?.area} onChange={(v) => onPatch({ hipoteca: { ...(fiador.hipoteca || {}), area: v } })} type="number" />
-                <Field label="Valor del inmueble (Q)" value={fiador.hipoteca?.valor} onChange={(v) => onPatch({ hipoteca: { ...(fiador.hipoteca || {}), valor: v } })} type="number" />
-              </div>
-            </div>
-          )}
-
-          {fiador.tipo_garantia === 'prendaria' && (
-            <div className="card" style={{ background: 'var(--gold-pale)', borderColor: 'var(--gold-border)' }}>
-              <div className="card-h"><h3 style={{ fontSize: 11 }}>Datos del bien mueble</h3></div>
-              <div className="row-2">
-                <div className="field">
-                  <label>Tipo de bien</label>
-                  <select className="select" value={fiador.prenda?.tipo_bien || 'Vehículo'} onChange={(e) => onPatch({ prenda: { ...(fiador.prenda || {}), tipo_bien: e.target.value } })}>
-                    {TIPOS_BIEN_PRENDA.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-                <Field label="Marca" value={fiador.prenda?.marca} onChange={(v) => onPatch({ prenda: { ...(fiador.prenda || {}), marca: v } })} />
-              </div>
-              <div className="row-2">
-                <Field label="Modelo y año" value={fiador.prenda?.modelo} onChange={(v) => onPatch({ prenda: { ...(fiador.prenda || {}), modelo: v } })} />
-                <Field label="Valor del bien (Q)" value={fiador.prenda?.valor} onChange={(v) => onPatch({ prenda: { ...(fiador.prenda || {}), valor: v } })} type="number" />
-              </div>
-              <div className="row-2">
-                <Field label="No. de serie / chasis" value={fiador.prenda?.serie} onChange={(v) => onPatch({ prenda: { ...(fiador.prenda || {}), serie: v } })} />
-                <Field label="Placa" value={fiador.prenda?.placa} onChange={(v) => onPatch({ prenda: { ...(fiador.prenda || {}), placa: v } })} />
-              </div>
-            </div>
-          )}
+          <div style={{ background: 'var(--bg-subtle)', padding: '10px 12px', borderRadius: 4, fontSize: 12, color: 'var(--text-secondary)', marginTop: 14 }}>
+            Este fiador aporta fianza solidaria, mancomunada y de pago.
+            Las garantías reales (hipoteca o prenda) se declaran arriba en
+            la sección «Garantía del deudor».
+          </div>
         </div>
       )}
     </div>

@@ -13,8 +13,8 @@ const {
   MARGIN_BOTTOM,
   MARGIN_LEFT,
   getCSSOficio,
-} = require('../shared/legal/formato-oficio');
-const CLAUSULAS_BASE = require('../shared/legal/clausulas-base.json');
+} = require('./shared/legal/formato-oficio');
+const CLAUSULAS_BASE = require('./shared/legal/clausulas-base.json');
 
 // Variables que SIEMPRE se renderizan como moneda formateada (ej. "Q18,500.00").
 // Si se agrega una variable monetaria futura, sumarla acá.
@@ -155,7 +155,7 @@ function buildCuentaClause(tipoPago, cuenta) {
   return '';
 }
 
-function buildVars({ representante, cliente, credito, garantia, firmas }) {
+function buildVars({ representante, institucion, cliente, credito, garantia, firmas }) {
   const tipoKey = credito?.tipo_pago || 'debito_automatico';
   const fechaInicioISO = credito?.fecha_inicio || '';
   const plazoMeses = credito?.plazo_meses || '';
@@ -205,13 +205,13 @@ function buildVars({ representante, cliente, credito, garantia, firmas }) {
     ingresos: cliente?.ingresos || '',
     // ─── Variables del motor de formato legal (F7) ──────────────
     // Coexisten con las anteriores; las plantillas viejas siguen funcionando.
-    ...buildLegalVars({ cliente, credito, firmas, garantia, fechaInicioISO, plazoMeses, fechaVencimientoISO }),
+    ...buildLegalVars({ cliente, credito, firmas, garantia, representante, institucion, fechaInicioISO, plazoMeses, fechaVencimientoISO }),
   };
 }
 
 // Variables computadas con frases legales completas según protocolo notarial GT.
 // Si falta un dato, se renderiza como '[VAR]' (placeholder visible en el PDF).
-function buildLegalVars({ cliente, credito, firmas, garantia, fechaInicioISO, plazoMeses, fechaVencimientoISO }) {
+function buildLegalVars({ cliente, credito, firmas, garantia, representante, institucion, fechaInicioISO, plazoMeses, fechaVencimientoISO }) {
   const generoCliente = cliente?.genero || 'M';
   // Frase de comparecencia del cliente individual (deudor).
   const cliente_compareciente = legalFormat.renderClienteCompareciente({
@@ -258,10 +258,28 @@ function buildLegalVars({ cliente, credito, firmas, garantia, fechaInicioISO, pl
   const cliente_nombre_upper  = cliente?.nombre ? legalFormat.nombreEnMayusculas(cliente.nombre) : '';
   const cliente_dpi_letras    = cliente?.dpi ? safe(() => legalFormat.dpiALetras(cliente.dpi)) : '';
 
+  // Fechas concretas en letras (hotfix bloque 5).
+  const fecha_inicio_letras       = fechaInicioISO       ? safe(() => legalFormat.fechaALetras(fechaInicioISO))       : '';
+  const fecha_vencimiento_letras  = fechaVencimientoISO  ? safe(() => legalFormat.fechaALetras(fechaVencimientoISO))  : '';
+
+  // Frase completa de forma de pago según tipo + cuenta. Reemplaza la lógica
+  // legacy de {{tipo_pago}}{{cuenta_clause}} que dejaba "__MISSING__cuenta_clause__".
+  const forma_pago_legal = safe(() =>
+    legalFormat.renderFormaPago(credito?.tipo_pago, credito?.cuenta_banco)
+  );
+
+  // Comparecencia del banco (institución acreditante por su representante).
+  const banco_compareciente = (institucion && representante)
+    ? safe(() => legalFormat.renderRepresentanteBanco(institucion, representante))
+    : '';
+
   return {
     cliente_compareciente,
+    banco_compareciente,
     fecha_contrato_letras,
     fecha_contrato_apertura,
+    fecha_inicio_letras,
+    fecha_vencimiento_letras,
     monto_legal,
     cuota_mensual_legal,
     plazo_legal,
@@ -271,6 +289,7 @@ function buildLegalVars({ cliente, credito, firmas, garantia, fechaInicioISO, pl
     ingresos_legal,
     seguro_inmueble_legal,
     valor_bien_legal,
+    forma_pago_legal,
     cliente_articulo,
     cliente_rol_deudor,
     cliente_rol_acreedor,
@@ -300,7 +319,7 @@ function compilarContrato(modelo_id, datos) {
   const garantia = datos?.datos_garantia || {};
   const firmas = datos?.datos_firmas || {};
 
-  const vars = buildVars({ representante, cliente, credito, garantia, firmas });
+  const vars = buildVars({ representante, institucion, cliente, credito, garantia, firmas });
 
   const clausulas = clausulasRaw.map((c) => ({
     codigo: c.codigo,
@@ -345,14 +364,19 @@ function generarHTML(contrato) {
   const firmas = metadata.firmas;
   const fiadores = metadata.fiadores || [];
 
+  // P3 hotfix v2: TODO el contrato como un solo párrafo continuo (notarial GT real).
+  // No hay <p> separados por cláusula — el texto fluye sin saltos. Las cláusulas
+  // se distinguen solo por sus títulos en MAYÚSCULAS inline.
   const cuerpo = clausulas
     .map((c) => {
       const esComparecencia = c.codigo === 'comparecencia';
       if (esComparecencia) {
-        return `<p class="comparecencia"><em>${renderClausulaHTML(c.texto)}</em></p>`;
+        return renderClausulaHTML(c.texto);
       }
       const titulo = c.titulo.toUpperCase().replace(/^CLÁUSULA\s+/i, 'CLÁUSULA ');
-      return `<p><span class="cl-titulo">${escapeHtml(titulo)}.</span> ${renderClausulaHTML(c.texto)}</p>`;
+      // Espacio + título inline en mayúsculas + texto. El espacio antes del título
+      // y el punto final del título dan el respiro visual sin romper línea.
+      return ` <span class="cl-titulo">${escapeHtml(titulo)}.</span> ${renderClausulaHTML(c.texto)}`;
     })
     .join('');
 
@@ -379,7 +403,7 @@ function generarHTML(contrato) {
   <title>${escapeHtml(firmas.correlativo || metadata.modelo.nombre)}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500&family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=DM+Mono:wght@400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@400&display=swap" rel="stylesheet">
   <style>${getCSSOficio()}</style>
 </head>
 <body>
@@ -389,7 +413,7 @@ function generarHTML(contrato) {
   </header>
 
   <div class="contrato-body">
-    ${cuerpo}
+    <p>${cuerpo}</p>
   </div>
 
   <div class="firmas-bloque firmas-principales">
@@ -436,7 +460,13 @@ async function generarPDF(html, filename) {
   const finalName = safe.endsWith('.pdf') ? safe : `${safe}.pdf`;
   const absPath = path.join(PDFS_PATH, finalName);
 
-  const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+  // En Railway (Linux): PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium del nix.
+  // Localmente: puppeteer.launch usa el Chromium que viene con el paquete.
+  const launchOpts = { headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] };
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    launchOpts.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
+  const browser = await puppeteer.launch(launchOpts);
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'networkidle0' });

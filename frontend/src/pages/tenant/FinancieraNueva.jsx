@@ -45,17 +45,61 @@ export default function FinancieraNueva() {
 
   const modeloSeleccionado = modelos.find((m) => m.id === Number(modeloId));
 
+  // Caso A: sin cliente → crea contrato 'en_curso' + token 48h + muestra link.
   const onCrearLink = async () => {
     setCreando(true); setError(null);
     try {
-      const año = new Date().getFullYear();
       const { correlativo: noContrato } = await nextCorrelativo(inst.id);
-      const datosCliente = cliente ? {
+      const datosCredito = {
+        monto: credito.monto,
+        plazo_meses: credito.plazo_meses,
+        tasa_anual: credito.tasa_anual,
+        cuota_mensual: credito.cuota_mensual,
+        proposito: credito.proposito,
+        moneda: credito.moneda,
+      };
+      const contrato = await createContrato({
+        institucion_id: inst.id,
+        modelo_id: Number(modeloId),
+        no_contrato: noContrato,
+        datos_cliente: null,
+        datos_credito: datosCredito,
+      });
+      const tokenRes = await generarTokenCliente(contrato.id);
+      const url = `${window.location.origin}/solicitud/${tokenRes.token}`;
+      setResultado({ contrato, token: tokenRes.token, url, expires_at: tokenRes.expires_at });
+    } catch (e) {
+      setError(e.response?.data?.error || e.message);
+    } finally {
+      setCreando(false);
+    }
+  };
+
+  // Caso B: cliente existente → crea contrato directo en 'revision_tenant'
+  // con snapshot de datos del cliente. No envía link. Redirige al detalle para
+  // que el banco complete los datos del préstamo.
+  const onCrearSolicitudDirecta = async () => {
+    if (!cliente) return;
+    setCreando(true); setError(null);
+    try {
+      const { correlativo: noContrato } = await nextCorrelativo(inst.id);
+      const datosCliente = {
         cliente_id: cliente.id,
         nombre: cliente.nombre,
         dpi: cliente.dpi,
+        nit: cliente.nit,
         tipo_persona: cliente.tipo_persona,
-      } : null;
+        fecha_nac: cliente.fecha_nac,
+        lugar_nac: cliente.lugar_nac,
+        genero: cliente.genero,
+        estado_civil: cliente.estado_civil,
+        profesion: cliente.profesion,
+        telefono: cliente.telefono,
+        email: cliente.email,
+        domicilio: cliente.domicilio,
+        ingresos: cliente.ingresos,
+        empleo: cliente.empleo,
+      };
       const datosCredito = {
         monto: credito.monto,
         plazo_meses: credito.plazo_meses,
@@ -70,10 +114,10 @@ export default function FinancieraNueva() {
         no_contrato: noContrato,
         datos_cliente: datosCliente,
         datos_credito: datosCredito,
+        cliente_existente: true,
       });
-      const tokenRes = await generarTokenCliente(contrato.id);
-      const url = `${window.location.origin}/solicitud/${tokenRes.token}`;
-      setResultado({ contrato, token: tokenRes.token, url, expires_at: tokenRes.expires_at });
+      // Estado del contrato ya es 'revision_tenant'. Redirigir al detalle para revisar.
+      nav(`../${contrato.id}`);
     } catch (e) {
       setError(e.response?.data?.error || e.message);
     } finally {
@@ -104,15 +148,31 @@ export default function FinancieraNueva() {
 
           {error && <div className="alert alert-danger">{error}</div>}
 
+          {cliente && (
+            <div style={{ padding: '12px 14px', background: '#faf9f4', border: '0.5px solid var(--border)', borderRadius: 4, fontSize: 13, lineHeight: 1.5 }}>
+              El cliente ya está registrado. Su solicitud pasará directo a <strong>En revisión</strong> sin necesidad de enviar link.
+            </div>
+          )}
+
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
             <button className="btn" onClick={() => nav('..')}>Cancelar</button>
-            <button
-              className="btn btn-gold"
-              onClick={onCrearLink}
-              disabled={!modeloId || !credito.monto || creando}
-            >
-              {creando ? 'Creando…' : 'Generar link para el cliente'}
-            </button>
+            {cliente ? (
+              <button
+                className="btn btn-gold"
+                onClick={onCrearSolicitudDirecta}
+                disabled={!modeloId || !credito.monto || creando}
+              >
+                {creando ? 'Creando…' : 'Crear solicitud directa'}
+              </button>
+            ) : (
+              <button
+                className="btn btn-gold"
+                onClick={onCrearLink}
+                disabled={!modeloId || !credito.monto || creando}
+              >
+                {creando ? 'Creando…' : 'Generar link para cliente'}
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -3,7 +3,7 @@ import { useNavigate, useOutletContext } from 'react-router-dom';
 import Topbar from '../../components/Topbar';
 import Breadcrumb from '../../components/Breadcrumb';
 import { tenantBreadcrumb } from '../../utils/breadcrumb';
-import { fetchModelos, updateModelo, createModelo } from '../../api/instituciones';
+import { fetchModelos, updateModelo, createModelo, duplicarModelo } from '../../api/instituciones';
 
 const TIPOS = [
   { v: 'personal', l: 'Personal / Fiduciaria', clausulas: 9 },
@@ -33,6 +33,18 @@ export default function TenantModelos() {
       reload();
     } catch (e) {
       alert('Error al actualizar: ' + (e.response?.data?.error || e.message));
+    }
+  };
+
+  const duplicar = async (m) => {
+    const nombre = prompt(`Nombre del modelo duplicado:`, `${m.nombre} (copia)`);
+    if (!nombre || !nombre.trim()) return;
+    try {
+      const nuevo = await duplicarModelo(inst.slug, m.id, nombre.trim());
+      reload();
+      nav(`${nuevo.id}`);
+    } catch (e) {
+      alert('Error al duplicar: ' + (e.response?.data?.error || e.message));
     }
   };
 
@@ -74,6 +86,9 @@ export default function TenantModelos() {
                 <div className="clausulas">{(m.clausulas || []).length} cláusulas</div>
                 <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button className="btn btn-gold btn-sm" onClick={() => nav(`/instituciones/${inst.slug}/modelos/${m.id}`)}>Editar</button>
+                  <button className="btn btn-sm" onClick={() => duplicar(m)}>
+                    Duplicar
+                  </button>
                   <button className="btn btn-sm" onClick={() => toggle(m)}>
                     {m.activo ? 'Desactivar' : 'Activar'}
                   </button>

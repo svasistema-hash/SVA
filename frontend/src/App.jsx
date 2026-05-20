@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import ProtectedRoute from './components/ProtectedRoute';
 import AppLayout from './components/AppLayout';
 import TenantLayout from './components/TenantLayout';
@@ -81,8 +81,36 @@ export default function App() {
           <Route path="financiera/:id" element={<FinancieraDetalle />} />
         </Route>
 
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
+  );
+}
+
+// F1 hotfix P6: catch-all visible en lugar de redirect silencioso al dashboard.
+// El comportamiento anterior (<Navigate to="/" replace />) hacía que cualquier
+// ruta no matcheada (incluyendo bundles cacheados sin las rutas nuevas) tirara
+// al usuario al dashboard sin explicación. Ahora muestra qué pasó.
+function NotFound() {
+  const loc = useLocation();
+  const nav = useNavigate();
+  return (
+    <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'var(--bg, #f8f5ec)', padding: 24, fontFamily: 'Inter, system-ui, sans-serif' }}>
+      <div style={{ maxWidth: 480, textAlign: 'center' }}>
+        <div style={{ fontSize: 48, fontWeight: 200, color: 'var(--gold, #a07d2e)', marginBottom: 16 }}>404</div>
+        <h2 style={{ fontWeight: 500, fontSize: 22, marginBottom: 12 }}>Página no encontrada</h2>
+        <p style={{ color: 'var(--text-dim, #6b6452)', lineHeight: 1.6, marginBottom: 8 }}>
+          La ruta <code style={{ background: '#faf9f4', padding: '2px 6px', borderRadius: 3, fontSize: 13 }}>{loc.pathname}</code> no existe.
+        </p>
+        <p style={{ color: 'var(--text-dim, #6b6452)', lineHeight: 1.6, fontSize: 13, marginBottom: 24 }}>
+          Si llegaste aquí desde un link interno, tu navegador puede tener una versión vieja en caché.
+          Hacé <strong>Ctrl + Shift + R</strong> (Windows/Linux) o <strong>Cmd + Shift + R</strong> (Mac) para forzar recarga.
+        </p>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+          <button onClick={() => nav(-1)} style={{ padding: '8px 16px', background: 'transparent', border: '0.5px solid var(--border, #e7ddc4)', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit' }}>Atrás</button>
+          <button onClick={() => nav('/')} style={{ padding: '8px 16px', background: 'var(--gold, #a07d2e)', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit' }}>Ir al dashboard</button>
+        </div>
+      </div>
+    </div>
   );
 }

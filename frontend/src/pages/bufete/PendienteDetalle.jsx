@@ -431,14 +431,21 @@ function B6Generar({ contrato, onAtras, onCambio }) {
   const [generando, setGenerando] = useState(false);
   const [pdfUrl, setPdfUrl] = useState(contrato.pdf_filename ? `/api/contratos/${contrato.id}/pdf` : null);
   const [completado, setCompletado] = useState(contrato.estado === 'completado');
+  const [recienGenerado, setRecienGenerado] = useState(false);
   const [err, setErr] = useState(null);
 
+  // Genera el PDF y lo abre automáticamente en nueva pestaña. Si ya había uno, lo regenera.
   const generar = async () => {
-    setGenerando(true); setErr(null);
+    setGenerando(true); setErr(null); setRecienGenerado(false);
     try {
       const r = await generatePdf(contrato.id);
       setPdfUrl(r.url);
+      setRecienGenerado(true);
       await onCambio();
+      // Abrir el PDF en nueva pestaña. openPdf descarga el blob autenticado.
+      openPdf(contrato.id);
+      // Banner verde "PDF generado" se oculta a los 6 segundos.
+      setTimeout(() => setRecienGenerado(false), 6000);
     } catch (e) {
       setErr(e.response?.data?.error || e.message);
     } finally {
@@ -473,7 +480,7 @@ function B6Generar({ contrato, onAtras, onCambio }) {
         {pdfUrl && (
           <button className="btn btn-gold" onClick={() => openPdf(contrato.id)} style={{ width: '100%', padding: 10 }}>
             <Printer size={14} style={{ marginRight: 8, verticalAlign: 'text-bottom' }} />
-            Abrir PDF final
+            Ver PDF final
           </button>
         )}
       </>
@@ -487,19 +494,29 @@ function B6Generar({ contrato, onAtras, onCambio }) {
 
       {err && <div className="alert alert-danger" style={{ marginTop: 10 }}>{err}</div>}
 
+      {recienGenerado && (
+        <div style={{ marginTop: 12, padding: '10px 14px', background: '#e6f7ed', border: '0.5px solid #2d6a4f', borderRadius: 4, fontSize: 13, color: '#2d6a4f', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Check size={14} />
+          <span>PDF generado correctamente. Se abrió en una nueva pestaña.</span>
+        </div>
+      )}
+
       {!pdfUrl ? (
+        // Primera generación.
         <button className="btn btn-gold" onClick={generar} disabled={generando} style={{ width: '100%', padding: 10, marginTop: 14 }}>
           <FileText size={14} style={{ marginRight: 8, verticalAlign: 'text-bottom' }} />
-          {generando ? 'Generando…' : 'Generar PDF preview'}
+          {generando ? 'Generando…' : 'Generar PDF'}
         </button>
       ) : (
+        // Ya existe un PDF: mostrar siempre "Ver PDF" + opción de regenerar + finalizar.
         <div style={{ marginTop: 14 }}>
-          <button className="btn" onClick={() => openPdf(contrato.id)} style={{ width: '100%', marginBottom: 8 }}>
+          <button className="btn btn-gold" onClick={() => openPdf(contrato.id)} style={{ width: '100%', padding: 10, marginBottom: 8 }}>
             <Printer size={14} style={{ marginRight: 8, verticalAlign: 'text-bottom' }} />
-            Ver PDF generado
+            Ver PDF
           </button>
           <button className="btn" onClick={generar} disabled={generando} style={{ width: '100%', marginBottom: 14, fontSize: 12 }}>
-            Regenerar PDF
+            <FileText size={12} style={{ marginRight: 6, verticalAlign: 'text-bottom' }} />
+            {generando ? 'Regenerando…' : 'Regenerar PDF'}
           </button>
           <button className="btn btn-gold" onClick={finalizar} disabled={generando} style={{ width: '100%', padding: 10 }}>
             {generando ? 'Procesando…' : 'Marcar como completado'}

@@ -23,7 +23,29 @@ db.exec(`
     activo INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     correlativo_prefijo TEXT,
-    cuenta_cobro TEXT
+    cuenta_cobro TEXT,
+    -- Hotfix Fix 3 (2026-05-20): datos completos de persona jurídica acreedora.
+    razon_social TEXT,
+    tipo_sociedad TEXT,
+    objeto_social TEXT,
+    direccion_fiscal TEXT,
+    escritura_numero TEXT,
+    escritura_fecha TEXT,
+    escritura_notario TEXT,
+    rm_numero TEXT,
+    rm_folio TEXT,
+    rm_libro TEXT,
+    rm_fecha TEXT,
+    patente_sociedad_numero TEXT,
+    patente_sociedad_fecha TEXT,
+    patente_empresa_numero TEXT,
+    patente_empresa_fecha TEXT,
+    capital_autorizado TEXT,
+    capital_suscrito TEXT,
+    capital_pagado TEXT,
+    regimen_tributario TEXT,
+    actividad_economica TEXT,
+    fecha_inicio_actividades TEXT
   );
 
   CREATE TABLE IF NOT EXISTS representantes (
@@ -305,6 +327,17 @@ db.exec(`
 const instCols = db.prepare('PRAGMA table_info(instituciones)').all().map((c) => c.name);
 if (!instCols.includes('correlativo_prefijo')) db.exec("ALTER TABLE instituciones ADD COLUMN correlativo_prefijo TEXT");
 if (!instCols.includes('cuenta_cobro')) db.exec("ALTER TABLE instituciones ADD COLUMN cuenta_cobro TEXT");
+// Hotfix Fix 3 (2026-05-20): datos completos de persona jurídica acreedora.
+for (const col of [
+  'razon_social','tipo_sociedad','objeto_social','direccion_fiscal',
+  'escritura_numero','escritura_fecha','escritura_notario',
+  'rm_numero','rm_folio','rm_libro','rm_fecha',
+  'patente_sociedad_numero','patente_sociedad_fecha','patente_empresa_numero','patente_empresa_fecha',
+  'capital_autorizado','capital_suscrito','capital_pagado',
+  'regimen_tributario','actividad_economica','fecha_inicio_actividades',
+]) {
+  if (!instCols.includes(col)) db.exec(`ALTER TABLE instituciones ADD COLUMN ${col} TEXT`);
+}
 
 const contratosCols = db.prepare('PRAGMA table_info(contratos)').all().map((c) => c.name);
 if (!contratosCols.includes('pdf_filename')) db.exec("ALTER TABLE contratos ADD COLUMN pdf_filename TEXT");

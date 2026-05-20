@@ -19,12 +19,39 @@ export default function TenantConfiguracion() {
   useEffect(() => {
     if (inst) {
       setDraft({
-        nombre: inst.nombre,
-        nit: inst.nit || '',
-        registro_mercantil: inst.registro_mercantil || '',
-        autorizacion_sib: inst.autorizacion_sib || '',
-        cuenta_cobro: inst.cuenta_cobro || '',
+        // Identificación básica
+        nombre: inst.nombre || '',
+        razon_social: inst.razon_social || '',
         tipo: inst.tipo,
+        tipo_sociedad: inst.tipo_sociedad || '',
+        nit: inst.nit || '',
+        cuenta_cobro: inst.cuenta_cobro || '',
+        autorizacion_sib: inst.autorizacion_sib || '',
+        registro_mercantil: inst.registro_mercantil || '',
+        objeto_social: inst.objeto_social || '',
+        direccion_fiscal: inst.direccion_fiscal || '',
+        // Escritura de constitución
+        escritura_numero: inst.escritura_numero || '',
+        escritura_fecha: inst.escritura_fecha || '',
+        escritura_notario: inst.escritura_notario || '',
+        // Registro mercantil estructurado
+        rm_numero: inst.rm_numero || '',
+        rm_folio: inst.rm_folio || '',
+        rm_libro: inst.rm_libro || '',
+        rm_fecha: inst.rm_fecha || '',
+        // Patentes
+        patente_sociedad_numero: inst.patente_sociedad_numero || '',
+        patente_sociedad_fecha: inst.patente_sociedad_fecha || '',
+        patente_empresa_numero: inst.patente_empresa_numero || '',
+        patente_empresa_fecha: inst.patente_empresa_fecha || '',
+        // Capital social
+        capital_autorizado: inst.capital_autorizado || '',
+        capital_suscrito: inst.capital_suscrito || '',
+        capital_pagado: inst.capital_pagado || '',
+        // Operación
+        regimen_tributario: inst.regimen_tributario || '',
+        actividad_economica: inst.actividad_economica || '',
+        fecha_inicio_actividades: inst.fecha_inicio_actividades || '',
         activo: inst.activo,
       });
     }
@@ -62,35 +89,111 @@ export default function TenantConfiguracion() {
               <h3>Datos de la institución</h3>
               {msg && <span style={{ fontSize: 11, color: msg.startsWith('Error') ? 'var(--danger)' : 'var(--success)' }}>{msg}</span>}
             </div>
-            <div className="field"><label>Nombre comercial</label><input className="input" value={draft.nombre} onChange={(e) => setDraft({ ...draft, nombre: e.target.value })} /></div>
-            <div className="row-2">
-              <div className="field"><label>Tipo</label>
-                <select className="select" value={draft.tipo} onChange={(e) => setDraft({ ...draft, tipo: e.target.value })}>
-                  <option value="banco">Banco</option>
-                  <option value="financiera">Financiera</option>
-                  <option value="desarrolladora">Desarrolladora</option>
-                  <option value="prestamista">Prestamista</option>
-                </select>
+
+            <Seccion titulo="Identificación">
+              <div className="field"><label>Nombre comercial *</label><input className="input" value={draft.nombre} onChange={(e) => setDraft({ ...draft, nombre: e.target.value })} /></div>
+              <div className="field"><label>Razón social</label><input className="input" value={draft.razon_social} onChange={(e) => setDraft({ ...draft, razon_social: e.target.value })} placeholder="Banco RSG, Sociedad Anónima" /></div>
+              <div className="row-2">
+                <div className="field"><label>Tipo</label>
+                  <select className="select" value={draft.tipo} onChange={(e) => setDraft({ ...draft, tipo: e.target.value })}>
+                    <option value="banco">Banco</option>
+                    <option value="financiera">Financiera</option>
+                    <option value="desarrolladora">Desarrolladora</option>
+                    <option value="prestamista">Prestamista</option>
+                  </select>
+                </div>
+                <div className="field"><label>Tipo de sociedad</label>
+                  <select className="select" value={draft.tipo_sociedad} onChange={(e) => setDraft({ ...draft, tipo_sociedad: e.target.value })}>
+                    <option value="">—</option>
+                    <option value="S.A.">S.A. — Sociedad Anónima</option>
+                    <option value="S.R.L.">S.R.L. — Sociedad de Responsabilidad Limitada</option>
+                    <option value="Sociedad Civil">Sociedad Civil</option>
+                    <option value="E.M.I.">E.M.I. — Empresa Mercantil Individual</option>
+                    <option value="Cooperativa">Cooperativa</option>
+                    <option value="Asociación/Fundación">Asociación / Fundación</option>
+                    <option value="Otra">Otra</option>
+                  </select>
+                </div>
               </div>
-              <div className="field"><label>Slug (URL)</label><input className="input" value={inst.slug} readOnly style={{ background: '#faf9f4' }} /></div>
-            </div>
-            <div className="row-2">
-              <div className="field"><label>NIT</label><input className="input" value={draft.nit} onChange={(e) => setDraft({ ...draft, nit: e.target.value })} /></div>
-              <div className="field"><label>Registro Mercantil</label><input className="input" value={draft.registro_mercantil} onChange={(e) => setDraft({ ...draft, registro_mercantil: e.target.value })} /></div>
-            </div>
-            <div className="field"><label>Autorización SIB</label><input className="input" value={draft.autorizacion_sib} onChange={(e) => setDraft({ ...draft, autorizacion_sib: e.target.value })} /></div>
-            <div className="field">
-              <label>Cuenta de cobro predeterminada</label>
-              <input
-                className="input"
-                value={draft.cuenta_cobro}
-                onChange={(e) => setDraft({ ...draft, cuenta_cobro: e.target.value })}
-                placeholder="01-2345-6789"
-                style={{ background: 'var(--gold-soft)', borderColor: 'var(--gold-border)' }}
-              />
-              <div className="help">Se precarga en cada contrato nuevo cuando el tipo de pago es débito automático o depósito en cuenta.</div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
+              <div className="row-2">
+                <div className="field"><label>NIT</label><input className="input" value={draft.nit} onChange={(e) => setDraft({ ...draft, nit: e.target.value })} /></div>
+                <div className="field"><label>Slug (URL)</label><input className="input" value={inst.slug} readOnly style={{ background: '#faf9f4' }} /></div>
+              </div>
+              <div className="field"><label>Objeto social</label><textarea className="input" value={draft.objeto_social} onChange={(e) => setDraft({ ...draft, objeto_social: e.target.value })} rows={2} placeholder="Operaciones bancarias y financieras conforme a la Ley de Bancos y Grupos Financieros..." style={{ resize: 'vertical' }} /></div>
+              <div className="field"><label>Dirección fiscal</label><input className="input" value={draft.direccion_fiscal} onChange={(e) => setDraft({ ...draft, direccion_fiscal: e.target.value })} placeholder="5a avenida 10-25 zona 9, Ciudad de Guatemala" /></div>
+            </Seccion>
+
+            <Seccion titulo="Escritura de constitución">
+              <div className="row-3">
+                <div className="field"><label>Escritura No.</label><input className="input" value={draft.escritura_numero} onChange={(e) => setDraft({ ...draft, escritura_numero: e.target.value })} /></div>
+                <div className="field"><label>Fecha</label><input className="input" type="date" value={draft.escritura_fecha} onChange={(e) => setDraft({ ...draft, escritura_fecha: e.target.value })} /></div>
+                <div className="field"><label>Notario autorizante</label><input className="input" value={draft.escritura_notario} onChange={(e) => setDraft({ ...draft, escritura_notario: e.target.value })} /></div>
+              </div>
+            </Seccion>
+
+            <Seccion titulo="Inscripción en Registro Mercantil">
+              <div className="row-3">
+                <div className="field"><label>Número</label><input className="input" value={draft.rm_numero} onChange={(e) => setDraft({ ...draft, rm_numero: e.target.value })} /></div>
+                <div className="field"><label>Folio</label><input className="input" value={draft.rm_folio} onChange={(e) => setDraft({ ...draft, rm_folio: e.target.value })} /></div>
+                <div className="field"><label>Libro</label><input className="input" value={draft.rm_libro} onChange={(e) => setDraft({ ...draft, rm_libro: e.target.value })} /></div>
+              </div>
+              <div className="row-2">
+                <div className="field"><label>Fecha inscripción</label><input className="input" type="date" value={draft.rm_fecha} onChange={(e) => setDraft({ ...draft, rm_fecha: e.target.value })} /></div>
+                <div className="field"><label>Registro mercantil (texto libre, opcional)</label><input className="input" value={draft.registro_mercantil} onChange={(e) => setDraft({ ...draft, registro_mercantil: e.target.value })} placeholder="Folio 22, Libro 5 (display alternativo)" /></div>
+              </div>
+            </Seccion>
+
+            <Seccion titulo="Patentes">
+              <div className="row-2">
+                <div className="field"><label>Patente de sociedad No.</label><input className="input" value={draft.patente_sociedad_numero} onChange={(e) => setDraft({ ...draft, patente_sociedad_numero: e.target.value })} /></div>
+                <div className="field"><label>Fecha patente sociedad</label><input className="input" type="date" value={draft.patente_sociedad_fecha} onChange={(e) => setDraft({ ...draft, patente_sociedad_fecha: e.target.value })} /></div>
+              </div>
+              <div className="row-2">
+                <div className="field"><label>Patente de empresa No.</label><input className="input" value={draft.patente_empresa_numero} onChange={(e) => setDraft({ ...draft, patente_empresa_numero: e.target.value })} /></div>
+                <div className="field"><label>Fecha patente empresa</label><input className="input" type="date" value={draft.patente_empresa_fecha} onChange={(e) => setDraft({ ...draft, patente_empresa_fecha: e.target.value })} /></div>
+              </div>
+            </Seccion>
+
+            <Seccion titulo="Capital social (encriptado)">
+              <div className="row-3">
+                <div className="field"><label>Capital autorizado (Q)</label><input className="input" type="number" step="0.01" value={draft.capital_autorizado} onChange={(e) => setDraft({ ...draft, capital_autorizado: e.target.value })} /></div>
+                <div className="field"><label>Capital suscrito (Q)</label><input className="input" type="number" step="0.01" value={draft.capital_suscrito} onChange={(e) => setDraft({ ...draft, capital_suscrito: e.target.value })} /></div>
+                <div className="field"><label>Capital pagado (Q)</label><input className="input" type="number" step="0.01" value={draft.capital_pagado} onChange={(e) => setDraft({ ...draft, capital_pagado: e.target.value })} /></div>
+              </div>
+            </Seccion>
+
+            <Seccion titulo="Operación y régimen">
+              <div className="row-2">
+                <div className="field"><label>Régimen tributario</label>
+                  <select className="select" value={draft.regimen_tributario} onChange={(e) => setDraft({ ...draft, regimen_tributario: e.target.value })}>
+                    <option value="">—</option>
+                    <option value="general">Régimen General</option>
+                    <option value="pequeno_contribuyente">Pequeño Contribuyente</option>
+                    <option value="opcional_simplificado">Opcional Simplificado sobre Ingresos</option>
+                    <option value="utilidades">Régimen sobre Utilidades</option>
+                  </select>
+                </div>
+                <div className="field"><label>Fecha inicio de actividades</label><input className="input" type="date" value={draft.fecha_inicio_actividades} onChange={(e) => setDraft({ ...draft, fecha_inicio_actividades: e.target.value })} /></div>
+              </div>
+              <div className="field"><label>Actividad económica</label><input className="input" value={draft.actividad_economica} onChange={(e) => setDraft({ ...draft, actividad_economica: e.target.value })} placeholder="Intermediación financiera, banca múltiple..." /></div>
+              <div className="field"><label>Autorización SIB</label><input className="input" value={draft.autorizacion_sib} onChange={(e) => setDraft({ ...draft, autorizacion_sib: e.target.value })} placeholder="Resolución SIB-2024-XXX" /></div>
+            </Seccion>
+
+            <Seccion titulo="Operación financiera">
+              <div className="field">
+                <label>Cuenta de cobro predeterminada</label>
+                <input
+                  className="input"
+                  value={draft.cuenta_cobro}
+                  onChange={(e) => setDraft({ ...draft, cuenta_cobro: e.target.value })}
+                  placeholder="01-2345-6789"
+                  style={{ background: 'var(--gold-soft)', borderColor: 'var(--gold-border)' }}
+                />
+                <div className="help">Se precarga en cada contrato nuevo cuando el tipo de pago es débito automático o depósito en cuenta.</div>
+              </div>
+            </Seccion>
+
+            <div style={{ textAlign: 'right', paddingTop: 12, borderTop: '1px solid var(--border-light)' }}>
               <button className="btn btn-gold" onClick={guardar} disabled={saving}>{saving ? <span className="spinner" /> : 'Guardar cambios'}</button>
             </div>
           </div>
@@ -129,6 +232,21 @@ export default function TenantConfiguracion() {
         </div>
       </div>
     </>
+  );
+}
+
+// Sección colapsable visual para agrupar campos del formulario de institución.
+function Seccion({ titulo, children }) {
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{
+        fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase',
+        letterSpacing: '0.08em', fontWeight: 500,
+        paddingBottom: 6, marginBottom: 12,
+        borderBottom: '0.5px solid var(--border)',
+      }}>{titulo}</div>
+      {children}
+    </div>
   );
 }
 

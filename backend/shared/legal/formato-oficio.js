@@ -4,11 +4,16 @@ const MARGIN_LEFT = 30;
 const MARGIN_RIGHT = 25;
 const MARGIN_TOP = 22;
 const MARGIN_BOTTOM = 22;
-const FONT_BODY = 'EB Garamond';
+// F1 hotfix P3: formato notarial guatemalteco.
+// - FONT_BODY: 'Libre Baskerville' como primario (serif clásico, legal-friendly)
+//   con fallback robusto a Times New Roman (presente en todos los sistemas).
+// - LINE_HEIGHT: 1.5 (notarial estándar, antes 1.95 = demasiado espaciado).
+// - FONT_SIZE_BODY: 12pt (antes 12.5pt, ahora ajustado a tamaño notarial típico).
+const FONT_BODY = 'Libre Baskerville';
 const FONT_UI = 'DM Sans';
 const FONT_MONO = 'DM Mono';
-const FONT_SIZE_BODY = '12.5pt';
-const LINE_HEIGHT = 1.95;
+const FONT_SIZE_BODY = '12pt';
+const LINE_HEIGHT = 1.5;
 const COLOR_TEXT = '#111111';
 
 function getCSSOficio() {
@@ -27,6 +32,10 @@ function getCSSOficio() {
       hyphens: auto;
       margin: 0;
     }
+    /* P3 hotfix v2: contrato como un solo párrafo continuo (notarial GT real).
+       Sin saltos de línea entre cláusulas — los títulos en MAYÚSCULAS inline
+       son lo único que las separa visualmente. */
+    .contrato-body { text-align: justify; }
 
     header.doc-head { text-align: center; margin-bottom: 10mm; }
     header.doc-head .banco {
@@ -51,13 +60,11 @@ function getCSSOficio() {
       text-align: justify;
       color: ${COLOR_TEXT};
     }
-    .contrato-body p.comparecencia {
-      text-indent: 0;
-      font-style: italic;
-    }
+    /* Títulos de cláusula inline (CLÁUSULA PRIMERA — TÍTULO.) en mayúsculas,
+       sans-serif para distinguir del cuerpo serif, sin romper línea. */
     .cl-titulo {
       font-family: '${FONT_UI}', sans-serif;
-      font-size: 9.5pt;
+      font-size: 10pt;
       font-weight: 600;
       letter-spacing: 0.04em;
       text-transform: uppercase;

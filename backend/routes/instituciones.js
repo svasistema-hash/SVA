@@ -1,8 +1,49 @@
 const express = require('express');
 const db = require('../db');
-const CLAUSULAS_BASE = require('../../shared/legal/clausulas-base.json');
+const CLAUSULAS_BASE = require('../shared/legal/clausulas-base.json');
+const { encrypt, decrypt } = require('../encryption');
+const { normalizeMoney } = require('../utils/money');
 
 const router = express.Router();
+
+// Fix 3: capital_* va encriptado en BD igual que en clientes_juridicos.
+const CAMPOS_CIFRADOS = new Set(['capital_autorizado', 'capital_suscrito', 'capital_pagado']);
+
+// Lista completa de columnas que el frontend puede leer/escribir.
+const CAMPOS_INSTITUCION = [
+  'nombre', 'nit', 'registro_mercantil', 'autorizacion_sib', 'tipo', 'activo',
+  'cuenta_cobro', 'correlativo_prefijo',
+  // Identificación adicional
+  'razon_social', 'tipo_sociedad', 'objeto_social', 'direccion_fiscal',
+  // Escritura constitución
+  'escritura_numero', 'escritura_fecha', 'escritura_notario',
+  // Registro mercantil estructurado
+  'rm_numero', 'rm_folio', 'rm_libro', 'rm_fecha',
+  // Patentes
+  'patente_sociedad_numero', 'patente_sociedad_fecha',
+  'patente_empresa_numero', 'patente_empresa_fecha',
+  // Capital social (encriptado)
+  'capital_autorizado', 'capital_suscrito', 'capital_pagado',
+  // Operación
+  'regimen_tributario', 'actividad_economica', 'fecha_inicio_actividades',
+];
+
+function safeDecrypt(value, label) {
+  if (value === null || value === undefined || value === '') return null;
+  try { return decrypt(value); }
+  catch (e) { console.error(`[instituciones decrypt failed] ${label}: ${e.message}`); return null; }
+}
+
+// Convierte fila cruda de BD a respuesta del API (descifra capital_*).
+function instFromRow(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    capital_autorizado: safeDecrypt(row.capital_autorizado, `inst.${row.id}.capital_autorizado`),
+    capital_suscrito:   safeDecrypt(row.capital_suscrito,   `inst.${row.id}.capital_suscrito`),
+    capital_pagado:     safeDecrypt(row.capital_pagado,     `inst.${row.id}.capital_pagado`),
+  };
+}
 
 function clausulasParaTipo(tipoGarantia) {
   return (CLAUSULAS_BASE.clausulas || [])
@@ -35,7 +76,7 @@ router.get('/', (req, res, next) => {
     const repStmt = db.prepare(
       'SELECT * FROM representantes WHERE institucion_id = ? AND activo = 1 LIMIT 1'
     );
-    res.json(rows.map((r) => ({ ...r, representante: repStmt.get(r.id) || null })));
+    res.json(rows.map((r) => ({ ...instFromRow(r), representante: repStmt.get(r.id) || null })));
   } catch (err) {
     next(err);
   }
@@ -76,7 +117,7 @@ router.get('/:slug', (req, res, next) => {
       .prepare('SELECT * FROM modelos WHERE institucion_id = ? AND activo = 1 ORDER BY nombre')
       .all(inst.id)
       .map((m) => ({ ...m, clausulas: JSON.parse(m.clausulas) }));
-    res.json({ ...inst, representante: representante || null, modelos });
+    res.json({ ...instFromRow(inst), representante: representante || null, modelos });
   } catch (err) {
     next(err);
   }
@@ -88,16 +129,27 @@ router.put('/:slug', (req, res, next) => {
     if (!inst) return res.status(404).json({ error: 'Institución no encontrada', code: 404 });
     if (!canAccess(req.user, inst.id))
       return res.status(403).json({ error: 'Sin acceso a esta institución', code: 403 });
-    const allowed = ['nombre', 'nit', 'registro_mercantil', 'autorizacion_sib', 'tipo', 'activo', 'cuenta_cobro'];
-    const updates = Object.entries(req.body || {}).filter(([k]) => allowed.includes(k));
-    if (!updates.length)
+
+    const entries = Object.entries(req.body || {}).filter(([k]) => CAMPOS_INSTITUCION.includes(k));
+    if (!entries.length)
       return res.status(400).json({ error: 'No hay campos válidos para actualizar', code: 400 });
-    const sets = updates.map(([k]) => `${k} = ?`).join(', ');
+
+    // capital_* va encriptado con normalización monetaria primero.
+    const transformados = entries.map(([k, v]) => {
+      if (CAMPOS_CIFRADOS.has(k)) {
+        const norm = v == null || v === '' ? null : normalizeMoney(v);
+        return [k, norm == null ? null : encrypt(norm)];
+      }
+      return [k, v];
+    });
+
+    const sets = transformados.map(([k]) => `${k} = ?`).join(', ');
     db.prepare(`UPDATE instituciones SET ${sets} WHERE id = ?`).run(
-      ...updates.map(([, v]) => v),
+      ...transformados.map(([, v]) => v),
       inst.id
     );
-    res.json(db.prepare('SELECT * FROM instituciones WHERE id = ?').get(inst.id));
+    const row = db.prepare('SELECT * FROM instituciones WHERE id = ?').get(inst.id);
+    res.json(instFromRow(row));
   } catch (err) {
     next(err);
   }
@@ -267,6 +319,59 @@ router.post('/:slug/modelos', (req, res, next) => {
   } catch (err) {
     if (err.code === 'SQLITE_CONSTRAINT_UNIQUE')
       return res.status(409).json({ error: 'Modelo con ese nombre ya existe', code: 409 });
+    next(err);
+  }
+});
+
+// F1 hotfix P4: duplicar un modelo existente con todas sus cláusulas.
+// Útil para crear variantes (e.g. "Crédito Personal con seguro" vs original).
+// Body opcional: { nombre } — si no, se autogenera "<original> (copia)".
+router.post('/:slug/modelos/:id/duplicar', (req, res, next) => {
+  try {
+    const inst = db.prepare('SELECT id FROM instituciones WHERE slug = ?').get(req.params.slug);
+    if (!inst) return res.status(404).json({ error: 'Institución no encontrada', code: 404 });
+    if (!canAccess(req.user, inst.id))
+      return res.status(403).json({ error: 'Sin acceso', code: 403 });
+    const origen = db
+      .prepare('SELECT * FROM modelos WHERE id = ? AND institucion_id = ?')
+      .get(req.params.id, inst.id);
+    if (!origen) return res.status(404).json({ error: 'Modelo no encontrado', code: 404 });
+
+    const nombreNuevo = (req.body?.nombre || '').trim() || `${origen.nombre} (copia)`;
+
+    const tx = db.transaction(() => {
+      const info = db
+        .prepare(
+          `INSERT INTO modelos (institucion_id, nombre, tipo_garantia, clausulas, activo)
+           VALUES (?, ?, ?, ?, 1)`
+        )
+        .run(inst.id, nombreNuevo, origen.tipo_garantia, origen.clausulas);
+      const nuevoId = info.lastInsertRowid;
+
+      const clausulasOrigen = db
+        .prepare('SELECT * FROM clausulas WHERE modelo_id = ? ORDER BY orden')
+        .all(origen.id);
+      const ins = db.prepare(
+        `INSERT INTO clausulas (institucion_id, modelo_id, orden, codigo, titulo, texto_base, variables, obligatoria)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      );
+      for (const c of clausulasOrigen) {
+        ins.run(inst.id, nuevoId, c.orden, c.codigo, c.titulo, c.texto_base, c.variables, c.obligatoria);
+      }
+      return { nuevoId, clausulasCopiadas: clausulasOrigen.length };
+    });
+
+    const { nuevoId, clausulasCopiadas } = tx();
+    const row = db.prepare('SELECT * FROM modelos WHERE id = ?').get(nuevoId);
+    res.status(201).json({
+      ...row,
+      clausulas: JSON.parse(row.clausulas),
+      clausulas_copiadas: clausulasCopiadas,
+      duplicado_de: origen.id,
+    });
+  } catch (err) {
+    if (err.code === 'SQLITE_CONSTRAINT_UNIQUE')
+      return res.status(409).json({ error: 'Ya existe un modelo con ese nombre', code: 409 });
     next(err);
   }
 });

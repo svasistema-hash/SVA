@@ -1,0 +1,28 @@
+# NO copiar a la imagen — son enormes o son secretos.
+node_modules
+npm-debug.log
+.env
+.env.local
+.env.*.local
+.git
+.gitignore
+.DS_Store
+
+# Bases de datos locales y backups
+lexdocs.db
+lexdocs.db-shm
+lexdocs.db-wal
+lexdocs.db.backup-*
+lexdocs.db.pre-*
+*.sql
+
+# Modelos de Tesseract (~3 MB cada uno). Se descargan al boot.
+*.traineddata
+
+# Uploads / PDFs locales — se manejan vía volumen montado en /data.
+../uploads
+../pdfs
+
+# Scripts y outputs de tests
+.tmp-*
+test-*.pdf
