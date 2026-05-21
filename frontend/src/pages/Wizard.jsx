@@ -11,6 +11,7 @@ import { fetchNotarios, createNotario } from '../api/notarios';
 import { numeroALetras } from '../utils/numeroALetras';
 import { calcularCuota, formatMoney } from '../utils/cuota';
 import { addMonthsISO, fechaLarga } from '../utils/fechas';
+import { formatDpi } from '../utils/dpi-format';
 
 const STEPS = [
   { n: 1, label: 'Cliente' },
@@ -406,7 +407,7 @@ function ClienteNuevo({ cliente, onScan, onCancel, onSave }) {
       <DpiScanner mode="dpi" onResult={(d) => { onScan(d); upd({ nombre: d.nombre, dpi: d.dpi, fecha_nac: d.fecha_nac, lugar_nac: d.lugar_nac }); }} />
       <div className="row-2" style={{ marginTop: 14 }}>
         <Field label="Nombre completo" value={local.nombre} onChange={(v) => upd({ nombre: v })} auto={!!local.nombre} />
-        <Field label="DPI / CUI" value={local.dpi} onChange={(v) => upd({ dpi: v })} auto={!!local.dpi} />
+        <Field label="DPI / CUI" value={local.dpi} onChange={(v) => upd({ dpi: formatDpi(v) })} auto={!!local.dpi} />
       </div>
       <div className="row-2">
         <Field label="NIT" value={local.nit} onChange={(v) => upd({ nit: v })} />
@@ -471,7 +472,7 @@ function Paso2({ cliente, af, onChange, onScanRecibo, reciboPath }) {
       </p>
       <div className="row-2">
         <Field label="Nombre completo" value={cliente.nombre} onChange={(v) => onChange({ nombre: v })} auto={af['datos_cliente.nombre']} />
-        <Field label="DPI / CUI" value={cliente.dpi} onChange={(v) => onChange({ dpi: v })} auto={af['datos_cliente.dpi']} />
+        <Field label="DPI / CUI" value={cliente.dpi} onChange={(v) => onChange({ dpi: formatDpi(v) })} auto={af['datos_cliente.dpi']} />
       </div>
       <div className="row-2">
         <Field label="NIT" value={cliente.nit} onChange={(v) => onChange({ nit: v })} auto={af['datos_cliente.nit']} />
@@ -981,7 +982,7 @@ function FiadorCard({ index, fiador, onPatch, onRemove }) {
           <SectionLabel>Identificación</SectionLabel>
           <div className="row-2">
             <Field label="Nombre completo *" value={fiador.nombre} onChange={(v) => onPatch({ nombre: v })} />
-            <Field label="DPI / CUI *" value={fiador.dpi} onChange={(v) => onPatch({ dpi: v })} />
+            <Field label="DPI / CUI *" value={fiador.dpi} onChange={(v) => onPatch({ dpi: formatDpi(v) })} />
           </div>
           <div className="row-2">
             <Field label="Fecha de nacimiento" value={fiador.fecha_nac} onChange={(v) => onPatch({ fecha_nac: v })} type="date" />
@@ -1003,7 +1004,7 @@ function FiadorCard({ index, fiador, onPatch, onRemove }) {
           {fiador.estado_civil === 'casado' && (
             <div className="row-2">
               <Field label="Nombre del cónyuge" value={fiador.conyuge_nombre} onChange={(v) => onPatch({ conyuge_nombre: v })} />
-              <Field label="DPI del cónyuge" value={fiador.conyuge_dpi} onChange={(v) => onPatch({ conyuge_dpi: v })} />
+              <Field label="DPI del cónyuge" value={fiador.conyuge_dpi} onChange={(v) => onPatch({ conyuge_dpi: formatDpi(v) })} />
             </div>
           )}
 

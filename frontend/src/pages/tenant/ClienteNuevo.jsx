@@ -6,6 +6,7 @@ import { tenantBreadcrumb } from '../../utils/breadcrumb';
 import { scanDpi, scanRecibo } from '../../api/contratos';
 import { createCliente } from '../../api/clientes';
 import { useStore } from '../../store/useStore';
+import { formatDpi } from '../../utils/dpi-format';
 
 const STEPS = [
   { n: 1, label: 'DPI' },
@@ -247,7 +248,7 @@ export default function ClienteNuevo() {
                     </div>
                   </div>
                   <ExtractedRow label="Nombre" value={d.nombre} onChange={(v) => upd({ nombre: v })} />
-                  <ExtractedRow label="CUI / DPI" value={d.dpi} onChange={(v) => upd({ dpi: v })} />
+                  <ExtractedRow label="CUI / DPI" value={d.dpi} onChange={(v) => upd({ dpi: formatDpi(v) })} />
                   <ExtractedRow label="Fecha nac." value={d.fecha_nac} onChange={(v) => upd({ fecha_nac: v })} displayFn={fechaLarga} />
                   <ExtractedRow label="Lugar nac." value={d.lugar_nac} onChange={(v) => upd({ lugar_nac: v })} />
                   <ExtractedRow label="Género" value={d.genero} onChange={(v) => upd({ genero: v })} />
@@ -314,7 +315,7 @@ export default function ClienteNuevo() {
                     </div>
                     <div className="field">
                       <label>DPI del cónyuge</label>
-                      <input className="input" value={d.conyuge_dpi} onChange={(e) => upd({ conyuge_dpi: e.target.value })} />
+                      <input className="input" value={d.conyuge_dpi} onChange={(e) => upd({ conyuge_dpi: formatDpi(e.target.value) })} inputMode="numeric" maxLength={15} />
                     </div>
                   </div>
                 </div>
