@@ -11,6 +11,7 @@ import Contrato from './pages/Contrato';
 import Wizard from './pages/Wizard';
 import Pendientes from './pages/bufete/Pendientes';
 import PendienteDetalle from './pages/bufete/PendienteDetalle';
+import VersionFooter from './components/VersionFooter';
 
 import TenantDashboard from './pages/tenant/Dashboard';
 import TenantClientes from './pages/tenant/Clientes';
@@ -83,6 +84,7 @@ export default function App() {
 
         <Route path="*" element={<NotFound />} />
       </Routes>
+      <VersionFooter />
     </BrowserRouter>
   );
 }

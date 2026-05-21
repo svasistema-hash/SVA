@@ -12,6 +12,8 @@ export const fetchContrato = (id) => client.get(`/contratos/${id}`).then((r) => 
 export const createContrato = (data) => client.post('/contratos', data).then((r) => r.data);
 export const updateContrato = (id, data) => client.put(`/contratos/${id}`, data).then((r) => r.data);
 export const generatePdf = (id) => client.post(`/contratos/${id}/pdf`).then((r) => r.data);
+// Llama al motor real del backend (F7 + variables resueltas). Devuelve { clausulas, vars, metadata }.
+export const compilarContrato = (id) => client.post(`/contratos/${id}/compilar`).then((r) => r.data);
 
 // F1 C4
 export const fetchConteoEstados = (instSlug) =>

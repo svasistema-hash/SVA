@@ -117,7 +117,7 @@ export default function FinancieraNueva() {
         cliente_existente: true,
       });
       // Estado del contrato ya es 'revision_tenant'. Redirigir al detalle para revisar.
-      nav(`../${contrato.id}`);
+      nav(`/instituciones/${inst.slug}/financiera/${contrato.id}`);
     } catch (e) {
       setError(e.response?.data?.error || e.message);
     } finally {
@@ -127,7 +127,7 @@ export default function FinancieraNueva() {
 
   const onSeleccionTipo = (tipo) => {
     setShowTipoModal(false);
-    nav(`../clientes/${tipo === 'juridica' ? 'juridicos' : 'individuales'}/nuevo?return_to=financiera_nueva`);
+    nav(`/instituciones/${inst.slug}/clientes/${tipo === 'juridica' ? 'juridicos' : 'individuales'}/nuevo?return_to=financiera_nueva`);
   };
 
   if (resultado) {

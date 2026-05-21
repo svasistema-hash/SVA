@@ -178,7 +178,7 @@ export default function Contrato() {
             </div>
           </div>
 
-          <Preview contrato={previewContrato} institucion={institucion} codigos={modeloCodigos} />
+          <Preview contratoId={id} contrato={contrato} institucion={institucion} />
         </div>
 
         {missingModal && (

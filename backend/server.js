@@ -76,6 +76,19 @@ app.use('/api', apiLimiter);
 
 app.get('/health', (req, res) => res.json({ ok: true, service: 'lexdocs-api' }));
 
+// /api/version — para que el frontend muestre qué commit está corriendo el
+// backend, útil para verificar deploys. Sin auth (info no sensible).
+const BUILD_COMMIT = process.env.RAILWAY_GIT_COMMIT_SHA || process.env.VERCEL_GIT_COMMIT_SHA || process.env.BUILD_COMMIT || 'unknown';
+const BUILD_TIME = process.env.BUILD_TIME || new Date().toISOString();
+app.get('/api/version', (req, res) => res.json({
+  service: 'lexdocs-api',
+  commit: BUILD_COMMIT.slice(0, 7),
+  commit_full: BUILD_COMMIT,
+  built_at: BUILD_TIME,
+  node: process.version,
+  uptime_seconds: Math.round(process.uptime()),
+}));
+
 app.use('/api/auth', authRoutes);
 app.use('/api/public', solicitudesPublicRouter);
 app.use(solicitudesAuthRouter);

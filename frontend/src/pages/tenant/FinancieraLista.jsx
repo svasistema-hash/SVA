@@ -83,7 +83,7 @@ export default function FinancieraLista() {
               <thead><tr><th>No.</th><th>Cliente</th><th>Modelo</th><th>Monto</th><th>Días</th><th>Estado</th><th>Actualizado</th></tr></thead>
               <tbody>
                 {filtradas.map((c) => (
-                  <tr key={c.id} onClick={() => nav(`../${c.id}`)} style={{ cursor: 'pointer' }}>
+                  <tr key={c.id} onClick={() => nav(`/instituciones/${inst.slug}/financiera/${c.id}`)} style={{ cursor: 'pointer' }}>
                     <td><code>{c.no_contrato}</code></td>
                     <td>{c.datos_cliente?.nombre || <span className="muted">—</span>}</td>
                     <td>{c.modelo_nombre}</td>

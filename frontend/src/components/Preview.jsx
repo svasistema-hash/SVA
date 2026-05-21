@@ -1,95 +1,119 @@
-import { useMemo } from 'react';
-import { CLAUSULAS_TEMPLATE, buildVars } from '../constants/clausulasTemplate';
+// Preview del contrato — REESCRITO para usar el motor F7 REAL del backend.
+//
+// Antes: usaba CLAUSULAS_TEMPLATE hardcoded del frontend (cláusulas viejas
+// con {{moneda}} {{monto}} ({{monto_letras}})), lo que producía un preview
+// distinto al PDF real. Quedaban placeholders [MONTO_LETRAS], [CUENTA_CLAUSE]
+// porque el frontend no resolvía esas variables.
+//
+// Ahora: llama a POST /api/contratos/:id/compilar que devuelve las cláusulas
+// YA compiladas con el motor F7 + variables resueltas. El frontend solo
+// renderiza el texto resultante. Lo que ves === lo que el PDF tiene.
 
-function renderText(template, vars) {
-  const parts = [];
-  const re = /\{\{(\w+)\}\}/g;
-  let last = 0;
-  let m;
-  while ((m = re.exec(template)) !== null) {
-    if (m.index > last) parts.push({ type: 'text', value: template.slice(last, m.index) });
-    const key = m[1];
-    const val = vars[key];
-    parts.push({ type: val ? 'filled' : 'empty', key, value: val });
-    last = re.lastIndex;
-  }
-  if (last < template.length) parts.push({ type: 'text', value: template.slice(last) });
-  return parts;
-}
+import { useEffect, useState } from 'react';
+import { compilarContrato } from '../api/contratos';
 
-function renderInlineSpans(parts) {
-  return parts.map((p, i) => {
-    if (p.type === 'text') return <span key={i}>{p.value}</span>;
-    if (p.type === 'filled') return <span key={i} className="blank-filled">{String(p.value)}</span>;
-    return <span key={i} className="blank-empty">[{p.key.toUpperCase()}]</span>;
-  });
-}
+export default function Preview({ contratoId, contrato, institucion }) {
+  const [compilado, setCompilado] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-export default function Preview({ contrato, institucion, codigos }) {
-  const vars = useMemo(() => buildVars(contrato, institucion), [contrato, institucion]);
-  const items = (codigos && codigos.length ? codigos : Object.keys(CLAUSULAS_TEMPLATE))
-    .map((code) => ({ code, ...CLAUSULAS_TEMPLATE[code] }))
-    .filter((x) => x.titulo);
+  useEffect(() => {
+    if (!contratoId) return;
+    setLoading(true); setError(null);
+    compilarContrato(contratoId)
+      .then(setCompilado)
+      .catch((e) => setError(e.response?.data?.error || e.message))
+      .finally(() => setLoading(false));
+    // Refresh on cambio de datos del contrato (cuando updateContrato).
+  }, [contratoId, contrato?.updated_at]);
 
-  const totalVars = items.reduce((acc, c) => acc + ((c.texto.match(/\{\{(\w+)\}\}/g) || []).length), 0);
-  const filled = items.reduce((acc, c) => {
-    const re = /\{\{(\w+)\}\}/g;
-    let m, n = 0;
-    while ((m = re.exec(c.texto)) !== null) if (vars[m[1]]) n++;
-    return acc + n;
-  }, 0);
-
-  const correlativo = contrato?.datos_firmas?.correlativo || '';
+  const correlativo = contrato?.datos_firmas?.correlativo || contrato?.no_contrato || '';
   const fiadores = (contrato?.datos_garantia?.fiadores || []).filter((f) => f && (f.nombre || f.dpi));
+
+  if (loading && !compilado) {
+    return (
+      <div className="preview-wrap">
+        <div className="preview-toolbar"><span>Cargando preview…</span></div>
+        <div className="preview"><div className="paper"><div className="empty"><span className="spinner" /></div></div></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="preview-wrap">
+        <div className="preview-toolbar"><span style={{ color: 'var(--danger)' }}>Error al compilar preview</span></div>
+        <div className="preview"><div className="paper"><div className="alert alert-danger">{error}</div></div></div>
+      </div>
+    );
+  }
+
+  if (!compilado) {
+    return (
+      <div className="preview-wrap">
+        <div className="preview-toolbar"><span>Preview del contrato</span></div>
+        <div className="preview"><div className="paper"><div className="empty">Sin datos para previsualizar.</div></div></div>
+      </div>
+    );
+  }
+
+  const { clausulas } = compilado;
+  const metaCliente = compilado.metadata?.cliente || {};
+  const metaRep = compilado.metadata?.representante || {};
+
+  // Contar variables sin resolver — el backend ya las marca como [VAR] (e.g. [EDAD]).
+  const variablesMissing = clausulas.reduce((sum, c) => sum + (c.texto.match(/\[[A-Z_]+\]/g) || []).length, 0);
 
   return (
     <div className="preview-wrap">
       <div className="preview-toolbar">
-        <span>Preview · {filled}/{totalVars} variables</span>
-        <div className="legend">
-          <span><span className="dot g" /> Llenado</span>
-          <span><span className="dot r" /> Pendiente</span>
-        </div>
+        <span>Preview — motor F7 (igual al PDF final)</span>
+        {variablesMissing > 0 && (
+          <span style={{ color: 'var(--alerta, #b67318)' }}>
+            {variablesMissing} variable(s) sin completar
+          </span>
+        )}
       </div>
       <div className="preview">
         <div className="paper">
           <header>
-            <div className="banco">{institucion?.nombre || ''}</div>
+            <div className="banco">{institucion?.nombre || compilado.metadata?.institucion?.nombre || ''}</div>
             {correlativo && <div className="correlativo">CONTRATO No. {correlativo}</div>}
           </header>
 
           <div className="contrato-body">
-            {items.map((c) => {
-              const parts = renderText(c.texto, vars);
-              if (c.code === 'comparecencia') {
+            {/* Todo el contrato como un solo párrafo continuo (notarial GT real),
+                igual que el PDF generado por contrato-engine. */}
+            <p>
+              {clausulas.map((c) => {
+                if (c.codigo === 'comparecencia') {
+                  return <span key={c.codigo}>{c.texto}</span>;
+                }
+                const titulo = c.titulo.toUpperCase().replace(/^CLÁUSULA\s+/i, 'CLÁUSULA ');
                 return (
-                  <p key={c.code} className="comparecencia"><em>{renderInlineSpans(parts)}</em></p>
+                  <span key={c.codigo}>
+                    {' '}
+                    <span className="cl-titulo">{titulo}.</span> {c.texto}
+                  </span>
                 );
-              }
-              const titulo = c.titulo.toUpperCase().replace(/^CLÁUSULA\s+/i, 'CLÁUSULA ');
-              return (
-                <p key={c.code}>
-                  <span className="cl-titulo">{titulo}.</span>{' '}
-                  {renderInlineSpans(parts)}
-                </p>
-              );
-            })}
+              })}
+            </p>
           </div>
 
           <div className="firmas-bloque firmas-principales">
             <div className="firma">
               <div className="espacio-firma" />
               <div className="linea-firma" />
-              <div className="firma-nombre">{vars.rep_nombre || '—'}</div>
-              <div className="firma-cargo">{vars.rep_cargo || 'Representante legal'}</div>
-              {vars.rep_dpi && <div className="firma-dpi">DPI {vars.rep_dpi}</div>}
+              <div className="firma-nombre">{metaRep.nombre || '—'}</div>
+              <div className="firma-cargo">{metaRep.cargo || 'Representante legal'}</div>
+              {metaRep.dpi && <div className="firma-dpi">DPI {metaRep.dpi}</div>}
             </div>
             <div className="firma">
               <div className="espacio-firma" />
               <div className="linea-firma" />
-              <div className="firma-nombre">{vars.cl_nombre || '—'}</div>
+              <div className="firma-nombre">{metaCliente.nombre || '—'}</div>
               <div className="firma-cargo">El Deudor</div>
-              {vars.cl_dpi && <div className="firma-dpi">DPI {vars.cl_dpi}</div>}
+              {metaCliente.dpi && <div className="firma-dpi">DPI {metaCliente.dpi}</div>}
             </div>
           </div>
 
@@ -112,18 +136,17 @@ export default function Preview({ contrato, institucion, codigos }) {
           <section className="legalizacion">
             <div className="title">LEGALIZACIÓN DE FIRMAS</div>
             <p>
-              En la ciudad de {vars.ciudad || '________'}, el {vars.fecha || '________'},
-              como Notario doy fe que las firmas que anteceden son auténticas, por haber sido puestas
-              en mi presencia hoy por los señores {vars.rep_nombre || '________'} y {vars.cl_nombre || '________'},
-              personas de mi conocimiento, quienes firmaron junto conmigo.
+              En la ciudad de {contrato?.datos_firmas?.ciudad || '________'},
+              el {contrato?.datos_firmas?.fecha || '________'},
+              como Notario doy fe que las firmas que anteceden son auténticas.
             </p>
             <div className="sello">
               <div className="sello-caja">Sello del Notario</div>
               <div className="firma-notario">
                 <div className="espacio-firma" />
                 <div className="linea-firma" />
-                <div className="firma-nombre">{contrato?.datos_firmas?.notario || '________'}</div>
-                <div className="firma-colegiado">Colegiado No. {contrato?.datos_firmas?.colegiado || '____'}</div>
+                <div className="firma-nombre">{contrato?.datos_firmas?.notario_nombre || contrato?.datos_firmas?.notario || '________'}</div>
+                <div className="firma-colegiado">Colegiado No. {contrato?.datos_firmas?.notario_colegiado || contrato?.datos_firmas?.colegiado || '____'}</div>
               </div>
             </div>
           </section>
