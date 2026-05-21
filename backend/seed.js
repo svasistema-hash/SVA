@@ -188,18 +188,18 @@ function run() {
     }
 
     const sampleClientes = [
-      { nombre: 'Juan Carlos Pérez García', dpi: '1234 56789 0101', nit: '5678910', estado_civil: 'casado', profesion: 'Ingeniero civil', domicilio: '5a calle 4-50 zona 10, Ciudad de Guatemala', fecha_nac: '1985-03-15', lugar_nac: 'Guatemala', telefono: '5555-1234', email: 'juan.perez@example.gt', ingresos: 18500, empleo: 'Constructora Quetzal, S.A.' },
-      { nombre: 'María Fernanda López Soto', dpi: '5678 12345 0102', nit: '9988776', estado_civil: 'soltera', profesion: 'Contadora pública', domicilio: '12 avenida 3-21 zona 1, Quetzaltenango', fecha_nac: '1990-11-22', lugar_nac: 'Quetzaltenango', telefono: '5555-9988', email: 'mflopez@example.gt', ingresos: 14200, empleo: 'Despacho López & Asociados' },
-      { nombre: 'José Antonio Méndez Ramírez', dpi: '8765 43210 0103', nit: '1122334', estado_civil: 'union de hecho', profesion: 'Médico cirujano', domicilio: '7a avenida 8-15 zona 14, Ciudad de Guatemala', fecha_nac: '1978-07-04', lugar_nac: 'Antigua Guatemala', telefono: '5555-1122', email: 'dr.mendez@example.gt', ingresos: 32000, empleo: 'Hospital Centro Médico' },
+      { nombre: 'Juan Carlos Pérez García', dpi: '1234 56789 0101', nit: '5678910', estado_civil: 'casado', profesion: 'Ingeniero civil', domicilio: '5a calle 4-50 zona 10, Ciudad de Guatemala', fecha_nac: '1985-03-15', lugar_nac: 'Guatemala', telefono: '5555-1234', email: 'juan.perez@example.gt', ingresos: 18500, empleo: 'Constructora Quetzal, S.A.', genero: 'masculino' },
+      { nombre: 'María Fernanda López Soto', dpi: '5678 12345 0102', nit: '9988776', estado_civil: 'soltera', profesion: 'Contadora pública', domicilio: '12 avenida 3-21 zona 1, Quetzaltenango', fecha_nac: '1990-11-22', lugar_nac: 'Quetzaltenango', telefono: '5555-9988', email: 'mflopez@example.gt', ingresos: 14200, empleo: 'Despacho López & Asociados', genero: 'femenino' },
+      { nombre: 'José Antonio Méndez Ramírez', dpi: '8765 43210 0103', nit: '1122334', estado_civil: 'union de hecho', profesion: 'Médico cirujano', domicilio: '7a avenida 8-15 zona 14, Ciudad de Guatemala', fecha_nac: '1978-07-04', lugar_nac: 'Antigua Guatemala', telefono: '5555-1122', email: 'dr.mendez@example.gt', ingresos: 32000, empleo: 'Hospital Centro Médico', genero: 'masculino' },
     ];
     // clientes: campos sensibles (dpi, nit, domicilio, ingresos) encriptados;
     // dpi y nit también con hash HMAC para búsqueda exacta.
     const insCliente = db.prepare(
       `INSERT OR IGNORE INTO clientes
        (institucion_id, nombre, dpi, dpi_hash, nit, nit_hash, estado_civil, profesion,
-        domicilio, fecha_nac, lugar_nac, telefono, email, ingresos, empleo)
+        domicilio, fecha_nac, lugar_nac, telefono, email, ingresos, empleo, genero)
        VALUES (@institucion_id,@nombre,@dpi,@dpi_hash,@nit,@nit_hash,@estado_civil,@profesion,
-               @domicilio,@fecha_nac,@lugar_nac,@telefono,@email,@ingresos,@empleo)`
+               @domicilio,@fecha_nac,@lugar_nac,@telefono,@email,@ingresos,@empleo,@genero)`
     );
     for (const c of sampleClientes) {
       insCliente.run({
@@ -218,6 +218,7 @@ function run() {
         email: c.email,
         ingresos: encrypt(normalizeMoney(c.ingresos)),
         empleo: c.empleo,
+        genero: c.genero || null,
       });
     }
 

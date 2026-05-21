@@ -487,7 +487,17 @@ function Paso2({ cliente, af, onChange, onScanRecibo, reciboPath }) {
           </select>
         </div>
       </div>
-      <Field label="Profesión" value={cliente.profesion} onChange={(v) => onChange({ profesion: v })} auto={af['datos_cliente.profesion']} />
+      <div className="row-2">
+        <Field label="Profesión" value={cliente.profesion} onChange={(v) => onChange({ profesion: v })} auto={af['datos_cliente.profesion']} />
+        <div className={'field' + (af['datos_cliente.genero'] ? ' autofilled' : '')}>
+          <label>Género *</label>
+          <select className="select" value={cliente.genero || ''} onChange={(e) => onChange({ genero: e.target.value })}>
+            <option value="">—</option>
+            <option value="masculino">Masculino</option>
+            <option value="femenino">Femenino</option>
+          </select>
+        </div>
+      </div>
       <div className="row-3">
         <Field label="Fecha nacimiento" value={cliente.fecha_nac} onChange={(v) => onChange({ fecha_nac: v })} type="date" auto={af['datos_cliente.fecha_nac']} />
         <div className="field">

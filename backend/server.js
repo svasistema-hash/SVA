@@ -33,6 +33,19 @@ try {
   console.warn('[migrate-f7] No se pudo aplicar:', e.message);
 }
 
+// Patches idempotentes: corren SIEMPRE al boot (no solo cuando la BD está
+// vacía). Necesario porque el seed sólo aplica con userCount=0, y si la BD
+// ya tiene datos pero le falta una columna seedeada, no se actualiza.
+try {
+  // correlativo_prefijo='BI' para Banco RSG (deploys previos al hotfix
+  // de 2026-05-20 tenían esta columna null).
+  db.prepare(
+    "UPDATE instituciones SET correlativo_prefijo = 'BI' WHERE slug = 'banco-rsg' AND correlativo_prefijo IS NULL"
+  ).run();
+} catch (e) {
+  console.warn('[patch] No se pudo aplicar patch idempotente:', e.message);
+}
+
 const authRoutes = require('./routes/auth');
 const institucionesRoutes = require('./routes/instituciones');
 const contratosRoutes = require('./routes/contratos');
