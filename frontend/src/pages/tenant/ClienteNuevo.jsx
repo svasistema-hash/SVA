@@ -164,7 +164,7 @@ export default function ClienteNuevo() {
       modelo_codigos: modelo.clausulas || [],
     });
     cargarCliente(saved);
-    nav(`/instituciones/${inst.slug}/contratos/nuevo`);
+    nav(`/instituciones/${inst.slug}/financiera/nueva`);
   };
 
   const reiniciar = () => {

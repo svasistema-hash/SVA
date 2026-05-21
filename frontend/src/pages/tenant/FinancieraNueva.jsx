@@ -10,14 +10,14 @@
 // manualmente. LexDocs solo valida formatos y guarda.
 
 import { useEffect, useState } from 'react';
-import { useNavigate, useOutletContext } from 'react-router-dom';
+import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
 import { Copy, Check, Search, X, UserPlus } from 'lucide-react';
 import Topbar from '../../components/Topbar';
 import Breadcrumb from '../../components/Breadcrumb';
 import SelectorTipoPersona from '../../components/SelectorTipoPersona';
 import { tenantBreadcrumb } from '../../utils/breadcrumb';
 import { fetchModelos } from '../../api/instituciones';
-import { listClientes } from '../../api/clientes';
+import { listClientes, fetchCliente } from '../../api/clientes';
 import { createContrato, generarTokenCliente } from '../../api/contratos';
 import { nextCorrelativo } from '../../api/clientes';
 
@@ -36,10 +36,20 @@ export default function FinancieraNueva() {
   const [error, setError] = useState(null);
   const [resultado, setResultado] = useState(null);      // { contrato, token, url }
 
+  // Pre-selección por query param ?cliente_id=X cuando vienen desde la
+  // pantalla de Cliente (Sprint pendientes-4-7 Parte 4).
+  const [searchParams] = useSearchParams();
+  const clienteIdParam = searchParams.get('cliente_id');
+
   useEffect(() => {
     if (!inst) return;
     fetchModelos(inst.slug).then(setModelos).catch(() => setModelos([]));
   }, [inst?.slug]);
+
+  useEffect(() => {
+    if (!clienteIdParam || cliente) return;
+    fetchCliente(clienteIdParam).then(setCliente).catch(() => {});
+  }, [clienteIdParam, cliente]);
 
   if (!inst) return <><Topbar title="Cargando…" /></>;
 

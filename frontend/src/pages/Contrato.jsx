@@ -80,9 +80,11 @@ export default function Contrato() {
   if (loading) return (<><Topbar title="Cargando…" /><div className="app-content"><div className="empty"><span className="spinner" /></div></div></>);
   if (error || !contrato) return (<><Topbar title="Contrato" /><div className="app-content"><div className="empty">{error || 'No encontrado'}</div></div></>);
 
+  // Wizard legacy reemplazado por el flujo F1 (módulo Financiera). El detalle
+  // de Financiera permite editar todas las secciones del contrato inline.
   const editPath = slug
-    ? `/instituciones/${slug}/contratos/${id}/editar`
-    : `/instituciones/${contrato.institucion_slug}/contratos/${id}/editar`;
+    ? `/instituciones/${slug}/financiera/${id}`
+    : `/instituciones/${contrato.institucion_slug}/financiera/${id}`;
 
   return (
     <>

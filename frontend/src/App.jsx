@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import ProtectedRoute from './components/ProtectedRoute';
 import AppLayout from './components/AppLayout';
 import TenantLayout from './components/TenantLayout';
@@ -8,7 +8,8 @@ import Dashboard from './pages/Dashboard';
 import Instituciones from './pages/Instituciones';
 import Contratos from './pages/Contratos';
 import Contrato from './pages/Contrato';
-import Wizard from './pages/Wizard';
+// Wizard legacy: ya no se monta como ruta. Sprint pendientes-4-7 Parte 4
+// redirige /contratos/nuevo → /financiera/nueva.
 import Pendientes from './pages/bufete/Pendientes';
 import PendienteDetalle from './pages/bufete/PendienteDetalle';
 import VersionFooter from './components/VersionFooter';
@@ -64,8 +65,9 @@ export default function App() {
           <Route path="clientes/juridicos/:id" element={<ClienteJuridicoDetalle />} />
           <Route path="clientes/juridicos/:id/editar" element={<ClienteJuridicoNuevo />} />
           <Route path="contratos" element={<TenantContratos />} />
-          <Route path="contratos/nuevo" element={<Wizard />} />
-          <Route path="contratos/:id/editar" element={<Wizard />} />
+          {/* Wizard legacy redirige al flujo nuevo F1 (Financiera). */}
+          <Route path="contratos/nuevo" element={<RedirectToFinancieraNueva />} />
+          <Route path="contratos/:id/editar" element={<RedirectToFinancieraDetalle />} />
           <Route path="contratos/:id" element={<Contrato />} />
           <Route path="modelos" element={<TenantModelos />} />
           <Route path="modelos/:id" element={<TenantModeloEdit />} />
@@ -87,6 +89,19 @@ export default function App() {
       <VersionFooter />
     </BrowserRouter>
   );
+}
+
+// Redirects del Wizard legacy al flujo nuevo F1. Permanecen para que links
+// guardados, bookmarks o cualquier código externo que apunte al path viejo
+// no se rompa. Tras unos meses, considerar reemplazar por NotFound.
+function RedirectToFinancieraNueva() {
+  const { slug } = useParams();
+  return <Navigate to={`/instituciones/${slug}/financiera/nueva`} replace />;
+}
+
+function RedirectToFinancieraDetalle() {
+  const { slug, id } = useParams();
+  return <Navigate to={`/instituciones/${slug}/financiera/${id}`} replace />;
 }
 
 // F1 hotfix P6: catch-all visible en lugar de redirect silencioso al dashboard.
