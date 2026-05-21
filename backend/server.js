@@ -6,7 +6,21 @@ const path = require('path');
 const fs = require('fs');
 
 const { PORT, CORS_ORIGIN, UPLOADS_PATH, NODE_ENV } = require('./config');
-require('./db');
+const db = require('./db');
+
+// Auto-seed al boot si la BD está vacía (Railway/Render con volumen vacío,
+// primer deploy en cuenta nueva, etc.). El seed es idempotente. Si falla
+// el server sigue arrancando (try/catch defensivo).
+try {
+  const userCount = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
+  if (userCount === 0) {
+    console.log('[seed] BD vacía detectada, sembrando datos iniciales...');
+    require('./seed').run();
+    console.log('[seed] OK');
+  }
+} catch (e) {
+  console.warn('[seed] No se pudo verificar/sembrar:', e.message);
+}
 
 const authRoutes = require('./routes/auth');
 const institucionesRoutes = require('./routes/instituciones');
