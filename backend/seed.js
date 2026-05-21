@@ -386,9 +386,15 @@ function run() {
   console.log('  Totales:', counts);
 }
 
-try {
-  run();
-} catch (err) {
-  console.error('Seed FAILED:', err.message);
-  process.exit(1);
+module.exports = { run };
+
+// Solo correr automáticamente cuando se invoca como `node seed.js`.
+// Cuando se importa con require('./seed'), no se ejecuta — el caller decide.
+if (require.main === module) {
+  try {
+    run();
+  } catch (err) {
+    console.error('Seed FAILED:', err.message);
+    process.exit(1);
+  }
 }
