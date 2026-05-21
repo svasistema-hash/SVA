@@ -1,5 +1,6 @@
 const express = require('express');
 const db = require('../db');
+const { audit } = require('../utils/audit');
 
 const router = express.Router();
 
@@ -127,6 +128,71 @@ router.put('/:id/clausulas/orden', (req, res, next) => {
     tx();
     res.json({ ok: true });
   } catch (err) {
+    next(err);
+  }
+});
+
+// Sprint pendientes-4-7 Parte 7 — clonar modelo (con todas sus cláusulas).
+//
+// POST /api/modelos/:id/clonar
+//   Body opcional: { nombre } — si falta, autogenera "<original> (copia)".
+//
+// Comportamiento:
+//   - Mismo institucion_id que el origen.
+//   - estado activo = 0 (inactivo). El usuario lo activa manualmente cuando
+//     termina de editarlo. Distinto del endpoint /duplicar previo que dejaba
+//     activo=1; este es el comportamiento correcto según spec.
+//   - Copia todas las cláusulas con su orden, código, título, texto_base,
+//     variables y obligatoria.
+//   - Registra en audit_log: MODELO_CLONADO con origen + nuevo + count cláusulas.
+router.post('/:id/clonar', (req, res, next) => {
+  try {
+    const origen = loadModeloOrDeny(req, res);
+    if (!origen) return;
+
+    const nombreNuevo = (req.body?.nombre || '').trim() || `${origen.nombre} (copia)`;
+
+    const tx = db.transaction(() => {
+      const info = db
+        .prepare(
+          `INSERT INTO modelos (institucion_id, nombre, tipo_garantia, clausulas, activo)
+           VALUES (?, ?, ?, ?, 0)`
+        )
+        .run(origen.institucion_id, nombreNuevo, origen.tipo_garantia, origen.clausulas);
+      const nuevoId = info.lastInsertRowid;
+
+      const clausulasOrigen = db
+        .prepare('SELECT * FROM clausulas WHERE modelo_id = ? ORDER BY orden')
+        .all(origen.id);
+      const ins = db.prepare(
+        `INSERT INTO clausulas (institucion_id, modelo_id, orden, codigo, titulo, texto_base, variables, obligatoria)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      );
+      for (const c of clausulasOrigen) {
+        ins.run(origen.institucion_id, nuevoId, c.orden, c.codigo, c.titulo, c.texto_base, c.variables, c.obligatoria);
+      }
+
+      audit(req, 'MODELO_CLONADO', 'modelo', nuevoId, {
+        origen_id: origen.id,
+        origen_nombre: origen.nombre,
+        nombre_nuevo: nombreNuevo,
+        clausulas_copiadas: clausulasOrigen.length,
+      });
+
+      return { nuevoId, clausulasCopiadas: clausulasOrigen.length };
+    });
+
+    const { nuevoId, clausulasCopiadas } = tx();
+    const row = db.prepare('SELECT * FROM modelos WHERE id = ?').get(nuevoId);
+    res.status(201).json({
+      ...row,
+      clausulas: JSON.parse(row.clausulas),
+      clausulas_copiadas: clausulasCopiadas,
+      clonado_de: origen.id,
+    });
+  } catch (err) {
+    if (err.code === 'SQLITE_CONSTRAINT_UNIQUE')
+      return res.status(409).json({ error: 'Ya existe un modelo con ese nombre', code: 409 });
     next(err);
   }
 });
