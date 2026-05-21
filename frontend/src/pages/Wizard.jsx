@@ -12,6 +12,7 @@ import { numeroALetras } from '../utils/numeroALetras';
 import { calcularCuota, formatMoney } from '../utils/cuota';
 import { addMonthsISO, fechaLarga } from '../utils/fechas';
 import { formatDpi } from '../utils/dpi-format';
+import { validarDPIRequerido, validarEmail, validarNIT, validarTelefono, validarRequerido } from '../utils/validators';
 
 const STEPS = [
   { n: 1, label: 'Cliente' },
@@ -292,18 +293,42 @@ export default function Wizard() {
   );
 }
 
-function Field({ label, value, onChange, type = 'text', placeholder, auto, readOnly }) {
+// Field con validación opcional onBlur.
+// Props:
+//   validate: (value) => string | null   — mensaje de error o null
+//   required: bool                       — combina con validate (si vacío → "Requerido")
+//   inputMode, maxLength: pasados al <input/>
+function Field({
+  label, value, onChange, type = 'text', placeholder, auto, readOnly,
+  validate, required, inputMode, maxLength,
+}) {
+  const [touched, setTouched] = useState(false);
+  const errorMsg = (() => {
+    if (!touched) return null;
+    if (required && (!value || String(value).trim() === '')) return `${label.replace(/\s*\*\s*$/, '')} es requerido`;
+    if (validate) return validate(value);
+    return null;
+  })();
   return (
-    <div className={'field' + (auto ? ' autofilled' : '')}>
-      <label>{label}</label>
+    <div className={'field' + (auto ? ' autofilled' : '') + (errorMsg ? ' field-error' : '')}>
+      <label>{label}{required && !label.endsWith('*') && ' *'}</label>
       <input
         className="input"
         type={type}
         value={value || ''}
         onChange={(e) => onChange?.(e.target.value)}
+        onBlur={() => setTouched(true)}
         placeholder={placeholder}
         readOnly={readOnly}
+        inputMode={inputMode}
+        maxLength={maxLength}
+        style={errorMsg ? { borderColor: 'var(--danger)' } : undefined}
       />
+      {errorMsg && (
+        <div style={{ fontSize: 11, color: 'var(--danger, #a52a2a)', marginTop: 3 }}>
+          {errorMsg}
+        </div>
+      )}
     </div>
   );
 }
@@ -406,11 +431,11 @@ function ClienteNuevo({ cliente, onScan, onCancel, onSave }) {
       <p className="muted" style={{ marginTop: 0 }}>Escaneá el DPI para autocompletar nombre y datos básicos, luego completá el resto.</p>
       <DpiScanner mode="dpi" onResult={(d) => { onScan(d); upd({ nombre: d.nombre, dpi: d.dpi, fecha_nac: d.fecha_nac, lugar_nac: d.lugar_nac }); }} />
       <div className="row-2" style={{ marginTop: 14 }}>
-        <Field label="Nombre completo" value={local.nombre} onChange={(v) => upd({ nombre: v })} auto={!!local.nombre} />
-        <Field label="DPI / CUI" value={local.dpi} onChange={(v) => upd({ dpi: formatDpi(v) })} auto={!!local.dpi} />
+        <Field label="Nombre completo" value={local.nombre} onChange={(v) => upd({ nombre: v })} auto={!!local.nombre} required />
+        <Field label="DPI / CUI" value={local.dpi} onChange={(v) => upd({ dpi: formatDpi(v) })} auto={!!local.dpi} required validate={validarDPIRequerido} inputMode="numeric" maxLength={15} />
       </div>
       <div className="row-2">
-        <Field label="NIT" value={local.nit} onChange={(v) => upd({ nit: v })} />
+        <Field label="NIT" value={local.nit} onChange={(v) => upd({ nit: v })} validate={validarNIT} />
         <div className="field">
           <label>Estado civil</label>
           <select className="select" value={local.estado_civil} onChange={(e) => upd({ estado_civil: e.target.value })}>
@@ -471,11 +496,11 @@ function Paso2({ cliente, af, onChange, onScanRecibo, reciboPath }) {
         Datos cargados desde la base de clientes o del DPI. Los campos dorados vienen de la extracción automática y se pueden corregir.
       </p>
       <div className="row-2">
-        <Field label="Nombre completo" value={cliente.nombre} onChange={(v) => onChange({ nombre: v })} auto={af['datos_cliente.nombre']} />
-        <Field label="DPI / CUI" value={cliente.dpi} onChange={(v) => onChange({ dpi: formatDpi(v) })} auto={af['datos_cliente.dpi']} />
+        <Field label="Nombre completo" value={cliente.nombre} onChange={(v) => onChange({ nombre: v })} auto={af['datos_cliente.nombre']} required />
+        <Field label="DPI / CUI" value={cliente.dpi} onChange={(v) => onChange({ dpi: formatDpi(v) })} auto={af['datos_cliente.dpi']} required validate={validarDPIRequerido} inputMode="numeric" maxLength={15} />
       </div>
       <div className="row-2">
-        <Field label="NIT" value={cliente.nit} onChange={(v) => onChange({ nit: v })} auto={af['datos_cliente.nit']} />
+        <Field label="NIT" value={cliente.nit} onChange={(v) => onChange({ nit: v })} auto={af['datos_cliente.nit']} validate={validarNIT} />
         <div className={'field' + (af['datos_cliente.estado_civil'] ? ' autofilled' : '')}>
           <label>Estado civil</label>
           <select className="select" value={cliente.estado_civil || ''} onChange={(e) => onChange({ estado_civil: e.target.value })}>
@@ -515,8 +540,8 @@ function Paso2({ cliente, af, onChange, onScanRecibo, reciboPath }) {
       </div>
       <Field label="Domicilio" value={cliente.domicilio} onChange={(v) => onChange({ domicilio: v })} auto={af['datos_cliente.domicilio']} />
       <div className="row-2">
-        <Field label="Teléfono" value={cliente.telefono} onChange={(v) => onChange({ telefono: v })} auto={af['datos_cliente.telefono']} />
-        <Field label="Email" value={cliente.email} onChange={(v) => onChange({ email: v })} type="email" auto={af['datos_cliente.email']} />
+        <Field label="Teléfono" value={cliente.telefono} onChange={(v) => onChange({ telefono: v })} auto={af['datos_cliente.telefono']} validate={validarTelefono} inputMode="tel" />
+        <Field label="Email" value={cliente.email} onChange={(v) => onChange({ email: v })} type="email" auto={af['datos_cliente.email']} validate={validarEmail} />
       </div>
       <div className="row-2">
         <Field label="Ingresos mensuales (Q)" value={cliente.ingresos} onChange={(v) => onChange({ ingresos: v })} type="number" auto={af['datos_cliente.ingresos']} />
