@@ -5,6 +5,7 @@ import { execSync } from 'node:child_process';
 // Tag de build visible en runtime para verificar deploys.
 // Toma commit hash de Git o de la env de Vercel/Railway si está disponible.
 function getBuildTag() {
+  if (process.env.VITE_BUILD_TAG) return process.env.VITE_BUILD_TAG.slice(0, 7);
   if (process.env.VERCEL_GIT_COMMIT_SHA) return process.env.VERCEL_GIT_COMMIT_SHA.slice(0, 7);
   if (process.env.RAILWAY_GIT_COMMIT_SHA) return process.env.RAILWAY_GIT_COMMIT_SHA.slice(0, 7);
   if (process.env.BUILD_COMMIT) return process.env.BUILD_COMMIT.slice(0, 7);
@@ -18,12 +19,14 @@ function getBuildTag() {
 const BUILD_TAG = getBuildTag();
 const BUILD_TIME = new Date().toISOString();
 
+// Inyectamos como import.meta.env.VITE_* — API canónica de vite para
+// variables expuestas al cliente. El `define` anterior con __APP_VERSION__
+// no se sobrevivía a la minificación.
+process.env.VITE_BUILD_TAG = BUILD_TAG;
+process.env.VITE_BUILD_TIME = BUILD_TIME;
+
 export default defineConfig({
   plugins: [react()],
-  define: {
-    __APP_VERSION__: JSON.stringify(BUILD_TAG),
-    __APP_BUILT_AT__: JSON.stringify(BUILD_TIME),
-  },
   server: {
     port: 7777,
     strictPort: true,

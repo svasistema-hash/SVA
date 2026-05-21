@@ -16,6 +16,7 @@ import {
   validarTokenContrato, guardarBorrador, subirDpiCliente,
   subirReciboCliente, confirmarSolicitud,
 } from '../api/solicitudes';
+import { formatDpi } from '../utils/dpi-format';
 
 const TOTAL_PASOS = 7;
 const TITULOS = {
@@ -475,8 +476,8 @@ function Paso2DPI({ d, upd, onScan }) {
         <p style={{ fontSize: 13, color: C.textoSuave, marginBottom: 14 }}>
           Estos datos fueron extraídos automáticamente. Revíselos y corrija lo que sea necesario.
         </p>
-        <Campo label="Número de DPI" requerido hint="13 dígitos sin guiones o con espacios">
-          <Input value={d.dpi} onChange={(e) => upd({ dpi: e.target.value })} inputMode="numeric" />
+        <Campo label="Número de DPI" requerido hint="13 dígitos (se formatea automáticamente)">
+          <Input value={d.dpi} onChange={(e) => upd({ dpi: formatDpi(e.target.value) })} inputMode="numeric" maxLength={15} />
         </Campo>
         <Campo label="Nombre completo" requerido>
           <Input value={d.nombre} onChange={(e) => upd({ nombre: e.target.value })} />
@@ -577,7 +578,7 @@ function Paso3Personales({ d, upd }) {
             <Input value={d.conyuge_nombre} onChange={(e) => upd({ conyuge_nombre: e.target.value })} />
           </Campo>
           <Campo label="DPI del cónyuge">
-            <Input value={d.conyuge_dpi} onChange={(e) => upd({ conyuge_dpi: e.target.value })} />
+            <Input value={d.conyuge_dpi} onChange={(e) => upd({ conyuge_dpi: formatDpi(e.target.value) })} inputMode="numeric" maxLength={15} />
           </Campo>
         </Fila2>
       )}
@@ -729,7 +730,7 @@ function FiadorCard({ fiador, indice, onChange, onDelete }) {
           <Input value={fiador.nombre} onChange={(e) => onChange({ nombre: e.target.value })} />
         </Campo>
         <Campo label="DPI" requerido>
-          <Input value={fiador.dpi} onChange={(e) => onChange({ dpi: e.target.value })} inputMode="numeric" />
+          <Input value={fiador.dpi} onChange={(e) => onChange({ dpi: formatDpi(e.target.value) })} inputMode="numeric" maxLength={15} />
         </Campo>
       </Fila2>
       <Fila2>
