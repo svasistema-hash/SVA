@@ -22,6 +22,17 @@ try {
   console.warn('[seed] No se pudo verificar/sembrar:', e.message);
 }
 
+// Auto-migración F7 al boot: reemplaza las cláusulas viejas del seed por las
+// versiones con variables del motor F7 ({{monto_legal}}, {{plazo_legal}}, etc.).
+// Idempotente: hace UPDATE incondicional al texto_base. Solo aplica al modelo
+// con codigos conocidos (Crédito Personal). Si la BD no tiene ese modelo, no
+// hace nada.
+try {
+  require('./scripts/migrate-clausulas-f7').run(db);
+} catch (e) {
+  console.warn('[migrate-f7] No se pudo aplicar:', e.message);
+}
+
 const authRoutes = require('./routes/auth');
 const institucionesRoutes = require('./routes/instituciones');
 const contratosRoutes = require('./routes/contratos');

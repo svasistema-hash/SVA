@@ -7,13 +7,9 @@
 //
 // Idempotente: el UPDATE corre siempre con el nuevo texto. No depende del texto previo.
 
+// Permite invocación como módulo (server.js al boot) o como script directo
+// (node scripts/migrate-clausulas-f7.js).
 const path = require('path');
-const Database = require('better-sqlite3');
-require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
-
-const DB_PATH = path.resolve(__dirname, '..', process.env.DB_PATH || './lexdocs.db');
-const db = new Database(DB_PATH);
-db.pragma('foreign_keys = ON');
 
 const MODELO_ID = 1; // Crédito Personal de Banco RSG
 
@@ -92,40 +88,52 @@ const CLAUSULAS_F7 = [
   },
 ];
 
-console.log(`[migrate-clausulas-f7] modelo_id=${MODELO_ID}`);
+function run(db) {
+  console.log(`[migrate-clausulas-f7] modelo_id=${MODELO_ID}`);
+  const existing = db.prepare('SELECT id, codigo FROM clausulas WHERE modelo_id = ?').all(MODELO_ID);
 
-const existing = db.prepare('SELECT id, codigo FROM clausulas WHERE modelo_id = ?').all(MODELO_ID);
-console.log(`  cláusulas existentes: ${existing.length}`);
-
-let updates = 0;
-let inserts = 0;
-const tx = db.transaction(() => {
-  for (const c of CLAUSULAS_F7) {
-    const prev = existing.find((e) => e.codigo === c.codigo);
-    if (prev) {
-      db.prepare(`
-        UPDATE clausulas
-        SET titulo = ?, orden = ?, obligatoria = ?, variables = ?, texto_base = ?
-        WHERE id = ?
-      `).run(c.titulo, c.orden, c.obligatoria, JSON.stringify(c.variables), c.texto_base, prev.id);
-      updates++;
-    } else {
-      db.prepare(`
-        INSERT INTO clausulas (institucion_id, modelo_id, codigo, titulo, orden, obligatoria, variables, texto_base)
-        SELECT institucion_id, ?, ?, ?, ?, ?, ?, ?
-        FROM modelos WHERE id = ?
-      `).run(MODELO_ID, c.codigo, c.titulo, c.orden, c.obligatoria, JSON.stringify(c.variables), c.texto_base, MODELO_ID);
-      inserts++;
+  let updates = 0;
+  let inserts = 0;
+  const tx = db.transaction(() => {
+    for (const c of CLAUSULAS_F7) {
+      const prev = existing.find((e) => e.codigo === c.codigo);
+      if (prev) {
+        db.prepare(`
+          UPDATE clausulas
+          SET titulo = ?, orden = ?, obligatoria = ?, variables = ?, texto_base = ?
+          WHERE id = ?
+        `).run(c.titulo, c.orden, c.obligatoria, JSON.stringify(c.variables), c.texto_base, prev.id);
+        updates++;
+      } else {
+        db.prepare(`
+          INSERT INTO clausulas (institucion_id, modelo_id, codigo, titulo, orden, obligatoria, variables, texto_base)
+          SELECT institucion_id, ?, ?, ?, ?, ?, ?, ?
+          FROM modelos WHERE id = ?
+        `).run(MODELO_ID, c.codigo, c.titulo, c.orden, c.obligatoria, JSON.stringify(c.variables), c.texto_base, MODELO_ID);
+        inserts++;
+      }
     }
-  }
-});
-tx();
+  });
+  tx();
 
-console.log(`  UPDATE: ${updates}`);
-console.log(`  INSERT: ${inserts}`);
-console.log('\n=== Cláusulas finales del modelo ===');
-const finales = db.prepare('SELECT codigo, orden, substr(texto_base, 1, 120) as preview FROM clausulas WHERE modelo_id = ? ORDER BY orden').all(MODELO_ID);
-finales.forEach(f => console.log(`  ${f.orden}. ${f.codigo}: ${f.preview}...`));
+  console.log(`[migrate-clausulas-f7] UPDATE=${updates} INSERT=${inserts}`);
+  return { updates, inserts };
+}
 
-console.log('\n[migrate-clausulas-f7] OK');
-db.close();
+module.exports = { run };
+
+// Si se invoca directamente con `node scripts/migrate-clausulas-f7.js`,
+// abre su propia conexión a la BD.
+if (require.main === module) {
+  require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
+  const Database = require('better-sqlite3');
+  const DB_PATH = path.resolve(__dirname, '..', process.env.DB_PATH || './lexdocs.db');
+  const db = new Database(DB_PATH);
+  db.pragma('foreign_keys = ON');
+  run(db);
+  console.log('\n=== Cláusulas finales del modelo ===');
+  const finales = db.prepare('SELECT codigo, orden, substr(texto_base, 1, 120) as preview FROM clausulas WHERE modelo_id = ? ORDER BY orden').all(MODELO_ID);
+  finales.forEach(f => console.log(`  ${f.orden}. ${f.codigo}: ${f.preview}...`));
+  console.log('\n[migrate-clausulas-f7] OK');
+  db.close();
+}

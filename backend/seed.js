@@ -18,6 +18,7 @@ const INSTITUCION = {
   nit: '1234567-8',
   registro_mercantil: 'Folio 22, Libro 5',
   autorizacion_sib: null,
+  correlativo_prefijo: 'BI', // BI-2026-NNNN para contratos del Banco RSG
 };
 
 const REPRESENTANTE = {
@@ -132,9 +133,14 @@ function run() {
 
     db.prepare(
       `INSERT OR IGNORE INTO instituciones
-       (slug, tipo, nombre, nit, registro_mercantil, autorizacion_sib)
-       VALUES (@slug, @tipo, @nombre, @nit, @registro_mercantil, @autorizacion_sib)`
+       (slug, tipo, nombre, nit, registro_mercantil, autorizacion_sib, correlativo_prefijo)
+       VALUES (@slug, @tipo, @nombre, @nit, @registro_mercantil, @autorizacion_sib, @correlativo_prefijo)`
     ).run(INSTITUCION);
+
+    // Patch para BD existentes con correlativo_prefijo NULL (deploy previo al fix).
+    db.prepare(
+      "UPDATE instituciones SET correlativo_prefijo = ? WHERE slug = ? AND correlativo_prefijo IS NULL"
+    ).run(INSTITUCION.correlativo_prefijo, INSTITUCION.slug);
 
     const institucion = db
       .prepare('SELECT id FROM instituciones WHERE slug = ?')

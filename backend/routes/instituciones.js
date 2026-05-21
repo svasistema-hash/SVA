@@ -45,6 +45,16 @@ function instFromRow(row) {
   };
 }
 
+// representantes.dpi viene encriptado AES-GCM en BD. Cada respuesta GET debe
+// pasar por esto antes de devolver al cliente.
+function repFromRow(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    dpi: safeDecrypt(row.dpi, `representante.${row.id}.dpi`),
+  };
+}
+
 function clausulasParaTipo(tipoGarantia) {
   return (CLAUSULAS_BASE.clausulas || [])
     .filter((c) => !c.tipos || c.tipos.includes(tipoGarantia))
@@ -76,7 +86,7 @@ router.get('/', (req, res, next) => {
     const repStmt = db.prepare(
       'SELECT * FROM representantes WHERE institucion_id = ? AND activo = 1 LIMIT 1'
     );
-    res.json(rows.map((r) => ({ ...instFromRow(r), representante: repStmt.get(r.id) || null })));
+    res.json(rows.map((r) => ({ ...instFromRow(r), representante: repFromRow(repStmt.get(r.id)) })));
   } catch (err) {
     next(err);
   }
@@ -117,7 +127,7 @@ router.get('/:slug', (req, res, next) => {
       .prepare('SELECT * FROM modelos WHERE institucion_id = ? AND activo = 1 ORDER BY nombre')
       .all(inst.id)
       .map((m) => ({ ...m, clausulas: JSON.parse(m.clausulas) }));
-    res.json({ ...instFromRow(inst), representante: representante || null, modelos });
+    res.json({ ...instFromRow(inst), representante: repFromRow(representante), modelos });
   } catch (err) {
     next(err);
   }
