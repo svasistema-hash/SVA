@@ -93,6 +93,15 @@ app.use('/api/auth', authRoutes);
 app.use('/api/public', solicitudesPublicRouter);
 app.use(solicitudesAuthRouter);
 
+// /api/files/:filename — sirve archivos de uploads/ (DPI escaneados, recibos).
+// Seguridad (Fix qa-2 #2):
+//  1. JWT requerido (authenticate middleware).
+//  2. Path traversal bloqueado (.., /, \).
+//  3. **Ownership check**: el filename debe estar registrado en clientes (dpi_scan_path
+//     o recibo_path) y pertenecer a una institución a la que el user tiene acceso.
+//     - Admin sin institucion_id: acceso cross-tenant (rol bufete).
+//     - User con institucion_id: solo archivos de su institución.
+//  4. Si el archivo no existe en BD pero existe en disco → 403 (huérfano, no servir).
 app.get('/api/files/:filename', authenticate, (req, res, next) => {
   try {
     const name = req.params.filename;
@@ -104,6 +113,35 @@ app.get('/api/files/:filename', authenticate, (req, res, next) => {
       return res.status(400).json({ error: 'Ruta inválida', code: 400 });
     }
     if (!fs.existsSync(abs)) return res.status(404).json({ error: 'Archivo no encontrado', code: 404 });
+
+    // Ownership: el filename debe estar registrado en alguna fila de clientes.
+    // Si está, comparar institucion_id con req.user.institucion_id (excepto admin global).
+    const db = require('./db');
+    const cliente = db.prepare(
+      'SELECT institucion_id FROM clientes WHERE dpi_scan_path = ? OR recibo_path = ? LIMIT 1'
+    ).get(name, name);
+
+    if (!cliente) {
+      // El archivo existe en disco pero ningún cliente lo referencia.
+      // Posibles causas: cargado durante el portal público C3 antes de confirmar
+      // (queda en datos_borrador.dpi_scan_path), o archivo huérfano.
+      // Permitimos acceso solo a admin (rol bufete cross-tenant) o usuarios con
+      // institucion_id si el archivo aparece en algún contrato en revision_*.
+      const enContrato = db.prepare(`
+        SELECT institucion_id FROM contratos
+        WHERE datos_borrador LIKE ? OR datos_cliente LIKE ?
+        LIMIT 1
+      `).get(`%${name}%`, `%${name}%`);
+      if (!enContrato) {
+        return res.status(403).json({ error: 'Sin acceso a este archivo', code: 403 });
+      }
+      if (req.user.institucion_id && req.user.institucion_id !== enContrato.institucion_id) {
+        return res.status(403).json({ error: 'Sin acceso a este archivo', code: 403 });
+      }
+    } else if (req.user.institucion_id && req.user.institucion_id !== cliente.institucion_id) {
+      return res.status(403).json({ error: 'Sin acceso a este archivo', code: 403 });
+    }
+
     res.sendFile(abs);
   } catch (err) {
     next(err);
