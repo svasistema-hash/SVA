@@ -19,18 +19,23 @@ const NAV = [
   {
     type: 'group',
     label: 'Solicitudes',
-    match: 'financiera',
+    // Sprint garantías-desacopladas CP4-A — match a 'solicitudes' (antes 'financiera').
+    // Array para que el sub-item "contratos" también active el grupo.
+    match: ['solicitudes', 'contratos'],
     counterKey: 'total_solicitudes', // suma de en_curso + revision_tenant + revision_abogados
     children: [
-      { to: 'financiera', end: true, label: 'Resumen' },
-      { to: 'financiera/nueva', label: 'Nueva solicitud' },
-      { to: 'financiera/en-curso', label: 'En curso',     counterKey: 'en_curso' },
-      { to: 'financiera/en-revision', label: 'En revisión', counterKey: 'revision_tenant' },
-      { to: 'financiera/con-bufete', label: 'Con bufete',  counterKey: 'revision_abogados' },
-      { to: 'financiera/completadas', label: 'Completadas', counterKey: 'completado' },
+      { to: 'solicitudes', end: true, label: 'Resumen' },
+      { to: 'solicitudes/nueva', label: 'Nueva solicitud' },
+      { to: 'solicitudes/en-curso', label: 'En curso',     counterKey: 'en_curso' },
+      { to: 'solicitudes/en-revision', label: 'En revisión', counterKey: 'revision_tenant' },
+      { to: 'solicitudes/con-bufete', label: 'Con bufete',  counterKey: 'revision_abogados' },
+      { to: 'solicitudes/completadas', label: 'Completadas', counterKey: 'completado' },
+      // Reubicado desde un link top-level "Contratos" — vivía duplicado con el
+      // grupo Solicitudes (CP4-A unificación). La página da búsqueda por estado/
+      // modelo/fecha/texto, útil cuando se quiere ver TODO en un solo lugar.
+      { to: 'contratos', label: 'Todas / Buscar' },
     ],
   },
-  { type: 'link', to: 'contratos', label: 'Contratos' },
   { type: 'link', to: 'modelos', label: 'Modelos' },
   { type: 'link', to: 'configuracion', label: 'Institución' },
   { type: 'link', to: 'reportes', label: 'Reportes' },
@@ -78,9 +83,15 @@ export default function TenantLayout() {
   };
 
   // Mantener abierto el grupo cuyo path matchea la URL actual.
+  // match puede ser string o array de strings (cualquier prefix coincide).
+  const matchesGroup = (match, sub) => {
+    if (!match) return false;
+    const arr = Array.isArray(match) ? match : [match];
+    return arr.some((m) => sub.startsWith(m));
+  };
   useEffect(() => {
     const sub = loc.pathname.replace(`/instituciones/${slug}/`, '').replace(`/instituciones/${slug}`, '');
-    const groupActive = NAV.find((n) => n.type === 'group' && n.match && sub.startsWith(n.match));
+    const groupActive = NAV.find((n) => n.type === 'group' && matchesGroup(n.match, sub));
     if (groupActive) setOpenGroup(groupActive.label);
   }, [loc.pathname, slug]);
 
@@ -109,7 +120,7 @@ export default function TenantLayout() {
           if (n.type === 'group') {
             const isOpen = openGroup === n.label;
             const sub = loc.pathname.replace(`/instituciones/${slug}/`, '').replace(`/instituciones/${slug}`, '');
-            const groupActive = n.match && sub.startsWith(n.match);
+            const groupActive = matchesGroup(n.match, sub);
             const groupCounter = n.counterKey ? contadorValor(n.counterKey) : null;
             return (
               <div key={n.label}>

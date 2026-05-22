@@ -13,17 +13,20 @@
 
 import { useEffect, useState, Fragment } from 'react';
 import { useNavigate, useOutletContext, useParams } from 'react-router-dom';
-import { Pencil, Save, X as XIcon, Send, Ban, Clock } from 'lucide-react';
+import { Pencil, Save, X as XIcon, Send, Ban, Clock, FileText, Eye } from 'lucide-react';
 import Topbar from '../../components/Topbar';
 import Breadcrumb from '../../components/Breadcrumb';
+import Preview from '../../components/Preview';
 import { tenantBreadcrumb } from '../../utils/breadcrumb';
 import {
   fetchContrato, updateContrato, avanzarContrato, anularContrato,
   fetchAuditLog, reenviarLink, generarTokenCliente,
+  generatePdf, openPdf,
 } from '../../api/contratos';
-import { EstadoBadge, formatRelative } from './Financiera';
+import { fetchInstitucion } from '../../api/instituciones';
+import { EstadoBadge, formatRelative } from './Solicitudes';
 
-export default function FinancieraDetalle() {
+export default function SolicitudDetalle() {
   const { inst } = useOutletContext() || {};
   const { id } = useParams();
   const nav = useNavigate();
@@ -32,6 +35,16 @@ export default function FinancieraDetalle() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [accionando, setAccionando] = useState(false);
+  const [generandoPdf, setGenerandoPdf] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+  // Para el Preview cargamos la institución expandida (con modelos) — el motor
+  // F7 backend lee de DB de todos modos, pero la UI del Preview espera este
+  // contexto para mostrar la lista de fiadores del bloque de firmas.
+  const [instExpandida, setInstExpandida] = useState(null);
+  useEffect(() => {
+    if (!inst?.slug) return;
+    fetchInstitucion(inst.slug).then(setInstExpandida).catch(() => setInstExpandida(null));
+  }, [inst?.slug]);
 
   const recargar = () => {
     return Promise.all([
@@ -77,6 +90,20 @@ export default function FinancieraDetalle() {
     }
   };
 
+  // Sprint garantías-desacopladas CP4-A — botones de PDF unificados aquí
+  // (antes vivían en /contratos/:id Contrato.jsx, hoy redirige a este detalle).
+  const onGenerarPdf = async () => {
+    setGenerandoPdf(true); setError(null);
+    try {
+      await generatePdf(id);
+      await recargar();
+    } catch (e) {
+      setError(e.response?.data?.error || e.message);
+    } finally {
+      setGenerandoPdf(false);
+    }
+  };
+
   const reenviar = async () => {
     if (!confirm('¿Generar un link nuevo para el cliente? El link anterior dejará de funcionar.')) return;
     setAccionando(true); setError(null);
@@ -108,7 +135,7 @@ export default function FinancieraDetalle() {
     <>
       <Topbar
         title={contrato.no_contrato}
-        crumbs={<Breadcrumb segments={tenantBreadcrumb(inst, 'Financiera', tituloRetorno.label, contrato.no_contrato)} />}
+        crumbs={<Breadcrumb segments={tenantBreadcrumb(inst, 'Solicitudes', tituloRetorno.label, contrato.no_contrato)} />}
         actions={
           <>
             {contrato.estado === 'revision_tenant' && (
@@ -128,6 +155,26 @@ export default function FinancieraDetalle() {
                 <Ban size={14} style={{ marginRight: 6, verticalAlign: 'text-bottom' }} />
                 Anular
               </button>
+            )}
+            {/* CP4-A: vista unificada — preview siempre disponible; generar/abrir
+                PDF cuando el contrato pase a estados donde tenga sentido. */}
+            <button className="btn" onClick={() => setShowPreview((v) => !v)}>
+              <Eye size={14} style={{ marginRight: 6, verticalAlign: 'text-bottom' }} />
+              {showPreview ? 'Ocultar preview' : 'Ver preview'}
+            </button>
+            {['revision_abogados', 'completado'].includes(contrato.estado) && (
+              <>
+                <button className="btn" onClick={onGenerarPdf} disabled={generandoPdf}>
+                  <FileText size={14} style={{ marginRight: 6, verticalAlign: 'text-bottom' }} />
+                  {generandoPdf ? 'Generando…' : 'Generar PDF'}
+                </button>
+                {contrato.pdf_path && (
+                  <button className="btn btn-primary" onClick={() => openPdf(id)}>
+                    <FileText size={14} style={{ marginRight: 6, verticalAlign: 'text-bottom' }} />
+                    Abrir PDF
+                  </button>
+                )}
+              </>
             )}
           </>
         }
@@ -165,6 +212,14 @@ export default function FinancieraDetalle() {
 
           <AuditLog entradas={audit} />
         </div>
+
+        {/* CP4-A — Preview del PDF compilado (cuando el usuario lo solicita).
+            Reusa el componente Preview de la vista vieja /contratos/:id. */}
+        {showPreview && (
+          <div style={{ marginTop: 22 }}>
+            <Preview contratoId={contrato.id} contrato={contrato} institucion={instExpandida} />
+          </div>
+        )}
       </div>
     </>
   );
@@ -399,5 +454,5 @@ function retornoSegunEstado(estado) {
     revision_abogados: { label: 'Con bufete', path: 'con-bufete' },
     completado: { label: 'Completadas', path: 'completadas' },
   };
-  return map[estado] || { label: 'Financiera', path: '' };
+  return map[estado] || { label: 'Solicitudes', path: '' };
 }
