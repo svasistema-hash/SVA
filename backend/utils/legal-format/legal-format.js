@@ -180,14 +180,28 @@ function renderRepresentanteBanco(institucion, representante) {
     nombre: representante.nombre,
     dpi: representante.dpi,
     genero: representante.genero || 'M',
+    edad: representante.edad,
+    fecha_nac: representante.fecha_nac,
     estado_civil: representante.estado_civil,
     profesion: representante.profesion,
     domicilio_local: true,
   });
   const cargoTxt = (representante.cargo || 'Representante Legal').toLocaleLowerCase('es');
 
+  // Sprint garantías-desacopladas CP2.5 — escritura_no en formato legal si es numérico.
+  // Limpia el prefijo "No." que algunos seeds históricos guardan.
+  function escrituraNoLegal(raw) {
+    if (!raw) return '';
+    const limpio = String(raw).replace(/^\s*No\.?\s*/i, '').trim();
+    const n = parseInt(limpio, 10);
+    if (Number.isFinite(n) && /^\d+$/.test(limpio)) {
+      try { return formatoLegal(n, { tipo: 'entero' }); } catch { return limpio; }
+    }
+    return limpio;
+  }
+
   const mandato = [];
-  if (representante.escritura_no) mandato.push(`mediante escritura pública de mandato número ${representante.escritura_no}`);
+  if (representante.escritura_no) mandato.push(`mediante escritura pública de mandato número ${escrituraNoLegal(representante.escritura_no)}`);
   if (representante.escritura_fecha) mandato.push(`de fecha ${fechaALetras(representante.escritura_fecha)}`);
   if (representante.notario_escritura) mandato.push(`autorizada por el notario ${representante.notario_escritura}`);
   const mandatoFrase = mandato.length ? `, lo que acredita ${mandato.join(' ')}` : '';

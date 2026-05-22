@@ -58,7 +58,13 @@ db.exec(`
     escritura_fecha TEXT,
     notario_escritura TEXT,
     vencimiento TEXT,
-    activo INTEGER NOT NULL DEFAULT 1
+    activo INTEGER NOT NULL DEFAULT 1,
+    -- Sprint garantías-desacopladas CP2.5: fecha_nac + genero para que la
+    -- frase legal del representante banco no produzca [EDAD] al compilar.
+    fecha_nac TEXT,
+    genero TEXT,
+    estado_civil TEXT,
+    profesion TEXT
     -- UNIQUE (institucion_id, dpi) removido: dpi es ciphertext con IV random,
     -- la unicidad de plaintext ya no se puede chequear desde el motor SQL.
   );
@@ -473,5 +479,14 @@ if (!clientesCols.includes('tipo_persona')) {
 
 // Sprint garantías-desacopladas CP2: el ALTER de fiadores.dpi_hash se removió
 // junto con la tabla. La migración manual hace DROP TABLE fiadores.
+
+// Sprint garantías-desacopladas CP2.5: ALTERs idempotentes en representantes
+// para que el motor F7 pueda renderizar la edad y el género en la frase del
+// representante banco (sin esto sale '[EDAD]' al compilar).
+const repCols = db.prepare('PRAGMA table_info(representantes)').all().map((c) => c.name);
+if (!repCols.includes('fecha_nac'))    db.exec("ALTER TABLE representantes ADD COLUMN fecha_nac TEXT");
+if (!repCols.includes('genero'))       db.exec("ALTER TABLE representantes ADD COLUMN genero TEXT");
+if (!repCols.includes('estado_civil')) db.exec("ALTER TABLE representantes ADD COLUMN estado_civil TEXT");
+if (!repCols.includes('profesion'))    db.exec("ALTER TABLE representantes ADD COLUMN profesion TEXT");
 
 module.exports = db;

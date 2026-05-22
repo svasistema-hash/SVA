@@ -7,6 +7,7 @@
     "start": "node server.js",
     "seed": "node seed.js",
     "migrate:garantias": "node scripts/migrate-garantias-desacopladas.js",
+    "seed:garantias-cp25": "node scripts/seed-garantias-cp25.js",
     "test:garantias-schema": "node scripts/test-garantias-schema.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
