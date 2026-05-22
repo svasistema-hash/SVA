@@ -225,8 +225,11 @@ function loadComparecientesDelContrato(contrato_id) {
       ORDER BY cc.orden
     `).all(contrato_id);
   }
+  // Sprint CP5 — incluir fecha_nac y genero (plaintext, agregados al schema
+  // en CP5) para que el motor F7 pueda calcular edad + concordancia.
   return db.prepare(`
     SELECT c.id, c.nombre, c.dpi, c.profesion, c.estado_civil, c.domicilio,
+           c.fecha_nac, c.genero,
            cc.rol, cc.orden, cc.agregado_por_actor, NULL AS congelado_en
     FROM contrato_comparecientes cc
     JOIN comparecientes c ON c.id = cc.compareciente_id
@@ -245,6 +248,11 @@ function descifrarCompareciente(row) {
     profesion: safeDecrypt(row.profesion, `compareciente.profesion id=${row.id}`),
     estado_civil: safeDecrypt(row.estado_civil, `compareciente.estado_civil id=${row.id}`),
     domicilio: safeDecrypt(row.domicilio, `compareciente.domicilio id=${row.id}`),
+    // Sprint CP5 — fecha_nac y genero son plaintext, pasarlos sin descifrar.
+    fecha_nac: row.fecha_nac || null,
+    genero: row.genero || null,
+    agregado_por_actor: row.agregado_por_actor || null,
+    congelado_en: row.congelado_en || null,
   };
 }
 
@@ -353,6 +361,10 @@ function buildComparecenciaText({ fecha_contrato_apertura, cliente_compareciente
         nombre: c.nombre,
         dpi: c.dpi,
         genero: c.genero || 'M',
+        // Sprint CP5 — fecha_nac se agregó a comparecientes para que
+        // renderClienteCompareciente calcule la edad. Sin este, el motor
+        // renderiza '[EDAD]' y el contrato queda inválido para firma.
+        fecha_nac: c.fecha_nac,
         estado_civil: c.estado_civil,
         profesion: c.profesion,
         domicilio: c.domicilio,

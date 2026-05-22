@@ -10,6 +10,7 @@
     "seed:garantias-cp25": "node scripts/seed-garantias-cp25.js",
     "test:garantias-schema": "node scripts/test-garantias-schema.js",
     "test:cp3": "node scripts/test-cp3-endpoints.js",
+    "test:cp5": "node scripts/test-cp5-casos-modelo.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

@@ -377,7 +377,7 @@ publicRouter.post('/contratos/:token/comparecientes', (req, res, next) => {
       return jsonError(res, 409, 'cap_excedido', `Máximo ${MAX_COMPS_CLIENTE} compareciente desde el portal`);
     }
 
-    const { nombre, dpi, profesion, estado_civil, domicilio, rol } = req.body || {};
+    const { nombre, dpi, profesion, estado_civil, domicilio, fecha_nac, genero, rol } = req.body || {};
     if (!nombre || !dpi) return jsonError(res, 400, 'campos_requeridos', 'nombre y dpi requeridos');
     if (!['fiador', 'tercero_garante'].includes(rol)) {
       return jsonError(res, 400, 'rol_invalido', "rol IN ('fiador','tercero_garante')");
@@ -397,8 +397,8 @@ publicRouter.post('/contratos/:token/comparecientes', (req, res, next) => {
       const info = db.prepare(`
         INSERT INTO comparecientes (
           institucion_id, nombre, nombre_hash, dpi, dpi_hash,
-          profesion, estado_civil, domicilio, creado_por_user_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+          profesion, estado_civil, domicilio, fecha_nac, genero, creado_por_user_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
       `).run(
         instId,
         encrypt(nombre), hashFor('nombre', nombre),
@@ -406,6 +406,8 @@ publicRouter.post('/contratos/:token/comparecientes', (req, res, next) => {
         profesion ? encrypt(profesion) : null,
         estado_civil ? encrypt(estado_civil) : null,
         domicilio ? encrypt(domicilio) : null,
+        fecha_nac || null,
+        genero || null,
       );
       compId = info.lastInsertRowid;
     }
