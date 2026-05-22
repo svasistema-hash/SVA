@@ -12,6 +12,13 @@ import { fetchContrato, updateContrato, fetchAuditLog, avanzarContrato, generate
 import { marcarDpiFisicoRecibido, fetchNotariosPorSlug } from '../../api/pendientes';
 import { fetchModelos } from '../../api/instituciones';
 import { BadgeDpiFisico } from './Pendientes';
+// Sprint garantías-desacopladas CP4-B — wizard del bufete usa los mismos
+// componentes nuevos que el banco. El backend infiere actor='bufete' del JWT
+// (admin sin institucion_id).
+import ComparecientesEditor from '../../components/ComparecientesEditor';
+import GarantiasEditor from '../../components/GarantiasEditor';
+import { listComparecientesDelContrato } from '../../api/garantias';
+import { listClientes } from '../../api/clientes';
 
 const WIZARD_STEPS = [
   { id: 1, label: 'Modelo' },
@@ -366,7 +373,57 @@ function B3Condiciones({ contrato, onSiguiente, onAtras, onCambio }) {
 }
 
 function B4Garantia({ contrato, onSiguiente, onAtras, onCambio }) {
-  return <SeccionEditableWizard titulo="Verifique las garantías" hint="Verifique los datos del inmueble o bien mueble según el modelo aplicado." valor={contrato.datos_garantia} campos={CAMPOS_GARANTIA} onSave={async (v) => { await updateContrato(contrato.id, { datos_garantia: v }); await onCambio(); }} onSiguiente={onSiguiente} onAtras={onAtras} />;
+  // Sprint garantías-desacopladas CP4-B — reemplaza el form plano por los
+  // componentes nuevos. El bufete revisa lo que el banco/cliente ya ingresó
+  // y puede ajustar antes de marcar el contrato como listo para escritura.
+  const [comparecientes, setComparecientes] = useState([]);
+  const [clienteId, setClienteId] = useState(null);
+
+  const recargarComps = () => listComparecientesDelContrato(contrato.id).then(setComparecientes).catch(() => setComparecientes([]));
+  useEffect(() => { recargarComps(); }, [contrato.id]);
+  useEffect(() => {
+    if (!contrato.datos_cliente?.dpi || !contrato.institucion_id) return;
+    listClientes({ dpi: contrato.datos_cliente.dpi, institucion_id: contrato.institucion_id })
+      .then((rows) => {
+        const c = (rows || []).find((x) => x.dpi === contrato.datos_cliente.dpi) || (rows || [])[0];
+        if (c) setClienteId(c.id);
+      })
+      .catch(() => setClienteId(null));
+  }, [contrato.datos_cliente?.dpi, contrato.institucion_id]);
+
+  const readOnly = ['completado', 'firmado'].includes(contrato.estado);
+
+  return (
+    <div style={{ padding: 16 }}>
+      <h3 style={{ marginTop: 0 }}>Verifique las garantías y comparecientes</h3>
+      <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>
+        Revise lo que el banco y el cliente ingresaron. Puede agregar, editar o quitar.
+        Cualquier cambio queda en el audit log con su firma como bufete.
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 14 }}>
+        <ComparecientesEditor
+          contratoId={contrato.id}
+          institucionId={contrato.institucion_id}
+          mode="auth"
+          readOnly={readOnly}
+          onChange={() => { recargarComps(); onCambio?.(); }}
+        />
+        <GarantiasEditor
+          contratoId={contrato.id}
+          institucionId={contrato.institucion_id}
+          comparecientes={comparecientes}
+          datosCliente={{ ...contrato.datos_cliente, id: clienteId }}
+          mode="auth"
+          readOnly={readOnly}
+          onChange={onCambio}
+        />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 14 }}>
+        <button className="btn" onClick={onAtras}>← Atrás</button>
+        <button className="btn btn-gold" onClick={onSiguiente}>Siguiente →</button>
+      </div>
+    </div>
+  );
 }
 
 function B5Notario({ contrato, onSiguiente, onAtras, onCambio }) {

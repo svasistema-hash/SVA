@@ -17,6 +17,10 @@ import {
   subirReciboCliente, confirmarSolicitud,
 } from '../api/solicitudes';
 import { formatDpi } from '../utils/dpi-format';
+// Sprint garantías-desacopladas CP4-B — Paso 5 y 6 ahora delegan en los
+// componentes reusables que persisten directo al backend (cap 1+1).
+import ComparecientesEditor from '../components/ComparecientesEditor';
+import GarantiasEditor from '../components/GarantiasEditor';
 
 const TOTAL_PASOS = 7;
 const TITULOS = {
@@ -212,8 +216,8 @@ export default function SolicitudPublica() {
           {paso === 2 && <Paso2DPI d={d} upd={upd} onScan={onScanDpi} />}
           {paso === 3 && <Paso3Personales d={d} upd={upd} />}
           {paso === 4 && <Paso4Domicilio d={d} upd={upd} onScan={onScanRecibo} />}
-          {paso === 5 && <Paso5Fiadores d={d} upd={upd} />}
-          {paso === 6 && <Paso6Garantia d={d} upd={upd} tipo={tipoGarantia} />}
+          {paso === 5 && <Paso5Fiadores token={token} />}
+          {paso === 6 && <Paso6Garantia token={token} tipo={tipoGarantia} />}
           {paso === 7 && <Paso7Confirmar d={d} upd={upd} enviar={enviar} enviando={enviando} error={error} />}
 
           <Navegacion
@@ -671,177 +675,45 @@ function Paso4Domicilio({ d, upd, onScan }) {
 }
 
 // ──────────────────────────────────────────────────────────────
-// Paso 5 — Fiadores (opcional)
+// Paso 5 — Fiadores (opcional, cap 1 desde el portal cliente)
+// Sprint garantías-desacopladas CP4-B — reemplaza la lógica vieja de
+// d.fiadores en el borrador por persistencia directa en backend vía
+// /api/public/contratos/:token/comparecientes. El componente
+// ComparecientesEditor gestiona el cap y la creación/eliminación.
 // ──────────────────────────────────────────────────────────────
 
-function Paso5Fiadores({ d, upd }) {
-  const fiadores = d.fiadores || [];
-
-  const updFiador = (idx, parche) => {
-    const nuevos = [...fiadores];
-    nuevos[idx] = { ...nuevos[idx], ...parche };
-    upd({ fiadores: nuevos });
-  };
-
-  const eliminar = (idx) => {
-    if (!confirm('¿Eliminar este fiador?')) return;
-    upd({ fiadores: fiadores.filter((_, i) => i !== idx) });
-  };
-
-  const agregar = () => upd({ fiadores: [...fiadores, FIADOR_VACIO()] });
-
+function Paso5Fiadores({ token }) {
   return (
     <>
-      <h2 style={{ fontWeight: 500, fontSize: 22, marginBottom: 8 }}>Fiadores</h2>
+      <h2 style={{ fontWeight: 500, fontSize: 22, marginBottom: 8 }}>Fiador o garante</h2>
       <p style={{ color: C.textoSuave, lineHeight: 1.6, marginBottom: 20 }}>
-        Si va a presentar uno o más fiadores, agréguelos aquí. Si no aplica, puede saltar este paso.
+        Si va a presentar un fiador o un tercero que aporte un bien, puede agregarlo aquí.
+        Es opcional — si no aplica, deje vacío y continúe.
       </p>
-
-      {fiadores.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '24px 16px', background: C.acentoSuave, border: HAIRLINE, borderRadius: 6 }}>
-          <p style={{ color: C.textoSuave, marginBottom: 14 }}>No ha agregado fiadores aún.</p>
-          <Boton variante="secondary" onClick={agregar}>Agregar fiador</Boton>
-        </div>
-      )}
-
-      {fiadores.map((f, idx) => (
-        <FiadorCard key={f.id} fiador={f} indice={idx} onChange={(p) => updFiador(idx, p)} onDelete={() => eliminar(idx)} />
-      ))}
-
-      {fiadores.length > 0 && (
-        <div style={{ marginTop: 12 }}>
-          <Boton variante="ghost" onClick={agregar}>Agregar otro fiador</Boton>
-        </div>
-      )}
+      <ComparecientesEditor mode="public" token={token} cap={1} />
     </>
   );
 }
 
-function FiadorCard({ fiador, indice, onChange, onDelete }) {
+// ──────────────────────────────────────────────────────────────
+// Paso 6 — Garantía propia (opcional, cap 1 desde el portal)
+// Sprint garantías-desacopladas CP4-B — el cliente solo puede declarar
+// UNA garantía y el aportante es automáticamente él mismo (no es elegible
+// fiduciaria desde el portal — solo hipotecaria o prendaria).
+// ──────────────────────────────────────────────────────────────
+
+function Paso6Garantia({ token, tipo }) {
   return (
-    <div style={{ border: HAIRLINE, borderRadius: 6, padding: 18, marginBottom: 12 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, paddingBottom: 10, borderBottom: HAIRLINE }}>
-        <span style={{ fontSize: 13, fontWeight: 500 }}>Fiador {indice + 1}</span>
-        <Boton variante="danger" onClick={onDelete} estilo={{ minWidth: 0, padding: '6px 12px', fontSize: 12 }}>Eliminar</Boton>
-      </div>
-
-      <Fila2>
-        <Campo label="Nombre completo" requerido>
-          <Input value={fiador.nombre} onChange={(e) => onChange({ nombre: e.target.value })} />
-        </Campo>
-        <Campo label="DPI" requerido>
-          <Input value={fiador.dpi} onChange={(e) => onChange({ dpi: formatDpi(e.target.value) })} inputMode="numeric" maxLength={15} />
-        </Campo>
-      </Fila2>
-      <Fila2>
-        <Campo label="Teléfono">
-          <Input value={fiador.telefono} onChange={(e) => onChange({ telefono: e.target.value })} inputMode="tel" />
-        </Campo>
-        <Campo label="Profesión u oficio">
-          <Input value={fiador.profesion} onChange={(e) => onChange({ profesion: e.target.value })} />
-        </Campo>
-      </Fila2>
-
-      <Campo label="Tipo de garantía del fiador">
-        <Select value={fiador.tipo} onChange={(e) => onChange({ tipo: e.target.value })}>
-          <option value="personal">Personal (solo fianza)</option>
-          <option value="hipotecaria">Hipotecaria</option>
-          <option value="prendaria">Prendaria</option>
-        </Select>
-      </Campo>
-
-      {fiador.tipo === 'hipotecaria' && (
-        <div style={{ background: C.acentoSuave, padding: 14, borderRadius: 4 }}>
-          <Fila2>
-            <Campo label="Finca No."><Input value={fiador.hipoteca?.finca || ''} onChange={(e) => onChange({ hipoteca: { ...fiador.hipoteca, finca: e.target.value } })} /></Campo>
-            <Campo label="Folio"><Input value={fiador.hipoteca?.folio || ''} onChange={(e) => onChange({ hipoteca: { ...fiador.hipoteca, folio: e.target.value } })} /></Campo>
-          </Fila2>
-          <Fila2>
-            <Campo label="Libro"><Input value={fiador.hipoteca?.libro || ''} onChange={(e) => onChange({ hipoteca: { ...fiador.hipoteca, libro: e.target.value } })} /></Campo>
-            <Campo label="Municipio"><Input value={fiador.hipoteca?.municipio || ''} onChange={(e) => onChange({ hipoteca: { ...fiador.hipoteca, municipio: e.target.value } })} /></Campo>
-          </Fila2>
-        </div>
-      )}
-
-      {fiador.tipo === 'prendaria' && (
-        <div style={{ background: C.acentoSuave, padding: 14, borderRadius: 4 }}>
-          <Fila2>
-            <Campo label="Tipo de bien"><Input value={fiador.prenda?.tipo_bien || ''} onChange={(e) => onChange({ prenda: { ...fiador.prenda, tipo_bien: e.target.value } })} placeholder="Vehículo, maquinaria…" /></Campo>
-            <Campo label="Marca"><Input value={fiador.prenda?.marca || ''} onChange={(e) => onChange({ prenda: { ...fiador.prenda, marca: e.target.value } })} /></Campo>
-          </Fila2>
-          <Fila2>
-            <Campo label="Serie / VIN"><Input value={fiador.prenda?.serie || ''} onChange={(e) => onChange({ prenda: { ...fiador.prenda, serie: e.target.value } })} /></Campo>
-            <Campo label="Placa"><Input value={fiador.prenda?.placa || ''} onChange={(e) => onChange({ prenda: { ...fiador.prenda, placa: e.target.value } })} /></Campo>
-          </Fila2>
-        </div>
-      )}
-    </div>
+    <>
+      <h2 style={{ fontWeight: 500, fontSize: 22, marginBottom: 8 }}>Garantía propia</h2>
+      <p style={{ color: C.textoSuave, lineHeight: 1.6, marginBottom: 20 }}>
+        {tipo === 'personal' || !tipo
+          ? 'Este contrato no requiere garantía real adicional, pero si quiere aportar un bien (inmueble o vehículo) puede hacerlo aquí. Es opcional.'
+          : 'Indique los datos del bien que ofrecerá como garantía. Si aún no tiene todos los detalles, complete lo que sepa y el banco verificará el resto.'}
+      </p>
+      <GarantiasEditor mode="public" token={token} />
+    </>
   );
-}
-
-// ──────────────────────────────────────────────────────────────
-// Paso 6 — Garantía (según tipo del contrato)
-// ──────────────────────────────────────────────────────────────
-
-function Paso6Garantia({ d, upd, tipo }) {
-  if (tipo === 'personal' || !tipo) {
-    return (
-      <>
-        <h2 style={{ fontWeight: 500, fontSize: 22, marginBottom: 8 }}>Garantía</h2>
-        <p style={{ color: C.textoSuave, lineHeight: 1.6 }}>
-          Este contrato no requiere garantía real adicional. Puede continuar al paso final.
-        </p>
-      </>
-    );
-  }
-
-  const g = d.garantia || { hipoteca: {}, prenda: {} };
-
-  if (tipo === 'hipotecaria' || tipo === 'mixta') {
-    return (
-      <>
-        <h2 style={{ fontWeight: 500, fontSize: 22, marginBottom: 8 }}>Garantía hipotecaria</h2>
-        <p style={{ color: C.textoSuave, lineHeight: 1.6, marginBottom: 20 }}>
-          Indique los datos del inmueble que ofrecerá como garantía. Si aún no tiene todos los detalles, complete lo que sepa y el banco verificará el resto.
-        </p>
-        <Fila2>
-          <Campo label="Finca No."><Input value={g.hipoteca?.finca || ''} onChange={(e) => upd({ garantia: { ...g, hipoteca: { ...g.hipoteca, finca: e.target.value } } })} /></Campo>
-          <Campo label="Folio"><Input value={g.hipoteca?.folio || ''} onChange={(e) => upd({ garantia: { ...g, hipoteca: { ...g.hipoteca, folio: e.target.value } } })} /></Campo>
-        </Fila2>
-        <Fila2>
-          <Campo label="Libro"><Input value={g.hipoteca?.libro || ''} onChange={(e) => upd({ garantia: { ...g, hipoteca: { ...g.hipoteca, libro: e.target.value } } })} /></Campo>
-          <Campo label="Municipio"><Input value={g.hipoteca?.municipio || ''} onChange={(e) => upd({ garantia: { ...g, hipoteca: { ...g.hipoteca, municipio: e.target.value } } })} /></Campo>
-        </Fila2>
-        <Campo label="Dirección del inmueble">
-          <TextArea value={g.hipoteca?.direccion || ''} onChange={(e) => upd({ garantia: { ...g, hipoteca: { ...g.hipoteca, direccion: e.target.value } } })} rows={2} />
-        </Campo>
-      </>
-    );
-  }
-
-  if (tipo === 'prendaria') {
-    return (
-      <>
-        <h2 style={{ fontWeight: 500, fontSize: 22, marginBottom: 8 }}>Garantía prendaria</h2>
-        <p style={{ color: C.textoSuave, lineHeight: 1.6, marginBottom: 20 }}>
-          Indique los datos del bien mueble que ofrecerá como garantía. Si es vehículo, incluya placa, serie y motor.
-        </p>
-        <Campo label="Tipo de bien">
-          <Input value={g.prenda?.tipo_bien || ''} onChange={(e) => upd({ garantia: { ...g, prenda: { ...g.prenda, tipo_bien: e.target.value } } })} placeholder="Vehículo, maquinaria, otro…" />
-        </Campo>
-        <Fila2>
-          <Campo label="Marca"><Input value={g.prenda?.marca || ''} onChange={(e) => upd({ garantia: { ...g, prenda: { ...g.prenda, marca: e.target.value } } })} /></Campo>
-          <Campo label="Modelo"><Input value={g.prenda?.modelo || ''} onChange={(e) => upd({ garantia: { ...g, prenda: { ...g.prenda, modelo: e.target.value } } })} /></Campo>
-        </Fila2>
-        <Fila2>
-          <Campo label="Serie / VIN"><Input value={g.prenda?.serie || ''} onChange={(e) => upd({ garantia: { ...g, prenda: { ...g.prenda, serie: e.target.value } } })} /></Campo>
-          <Campo label="Placa"><Input value={g.prenda?.placa || ''} onChange={(e) => upd({ garantia: { ...g, prenda: { ...g.prenda, placa: e.target.value } } })} /></Campo>
-        </Fila2>
-      </>
-    );
-  }
-
-  return null;
 }
 
 // ──────────────────────────────────────────────────────────────

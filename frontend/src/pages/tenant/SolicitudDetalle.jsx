@@ -17,6 +17,12 @@ import { Pencil, Save, X as XIcon, Send, Ban, Clock, FileText, Eye } from 'lucid
 import Topbar from '../../components/Topbar';
 import Breadcrumb from '../../components/Breadcrumb';
 import Preview from '../../components/Preview';
+// Sprint garantías-desacopladas CP4-B — componentes nuevos para el modelo
+// desacoplado de garantías y comparecientes.
+import ComparecientesEditor from '../../components/ComparecientesEditor';
+import GarantiasEditor from '../../components/GarantiasEditor';
+import { listComparecientesDelContrato } from '../../api/garantias';
+import { listClientes } from '../../api/clientes';
 import { tenantBreadcrumb } from '../../utils/breadcrumb';
 import {
   fetchContrato, updateContrato, avanzarContrato, anularContrato,
@@ -37,6 +43,26 @@ export default function SolicitudDetalle() {
   const [accionando, setAccionando] = useState(false);
   const [generandoPdf, setGenerandoPdf] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  // Lista viva de comparecientes del contrato — la usa GarantiasEditor para
+  // el AportantePicker (saber qué personas pueden ser aportantes).
+  const [compsDelContrato, setCompsDelContrato] = useState([]);
+  const recargarComparecientes = () =>
+    listComparecientesDelContrato(id).then(setCompsDelContrato).catch(() => setCompsDelContrato([]));
+  useEffect(() => { recargarComparecientes(); }, [id]);
+
+  // CP4-B — Resolver el cliente.id del contrato por DPI para que el AportantePicker
+  // de GarantiasEditor pueda crear garantías con aportante_cliente_id=cliente.id.
+  // contrato.datos_cliente trae el dpi pero no el cliente_id (relación implícita).
+  const [clienteIdDelContrato, setClienteIdDelContrato] = useState(null);
+  useEffect(() => {
+    if (!contrato?.datos_cliente?.dpi || !contrato?.institucion_id) return;
+    listClientes({ dpi: contrato.datos_cliente.dpi, institucion_id: contrato.institucion_id })
+      .then((rows) => {
+        const c = (rows || []).find((x) => x.dpi === contrato.datos_cliente.dpi) || (rows || [])[0];
+        if (c) setClienteIdDelContrato(c.id);
+      })
+      .catch(() => setClienteIdDelContrato(null));
+  }, [contrato?.datos_cliente?.dpi, contrato?.institucion_id]);
   // Para el Preview cargamos la institución expandida (con modelos) — el motor
   // F7 backend lee de DB de todos modos, pero la UI del Preview espera este
   // contexto para mostrar la lista de fiadores del bloque de firmas.
@@ -201,12 +227,25 @@ export default function SolicitudDetalle() {
               editable={['en_curso', 'revision_tenant'].includes(contrato.estado)}
               onSave={async (nuevo) => { await updateContrato(id, { datos_credito: nuevo }); await recargar(); }}
             />
-            <SeccionEditable
-              titulo="Garantía"
-              valor={contrato.datos_garantia}
-              campos={CAMPOS_GARANTIA}
-              editable={['en_curso', 'revision_tenant'].includes(contrato.estado)}
-              onSave={async (nuevo) => { await updateContrato(id, { datos_garantia: nuevo }); await recargar(); }}
+            {/* Sprint garantías-desacopladas CP4-B — sección Garantía
+                reemplazada por los componentes nuevos. Los datos viven en
+                las tablas comparecientes/garantias + pivotes, NO en
+                contratos.datos_garantia. La sección plana CAMPOS_GARANTIA
+                queda en el archivo solo como referencia legacy. */}
+            <ComparecientesEditor
+              contratoId={id}
+              institucionId={contrato.institucion_id}
+              mode="auth"
+              readOnly={['completado', 'firmado'].includes(contrato.estado)}
+              onChange={recargarComparecientes}
+            />
+            <GarantiasEditor
+              contratoId={id}
+              institucionId={contrato.institucion_id}
+              comparecientes={compsDelContrato}
+              datosCliente={{ ...contrato.datos_cliente, id: clienteIdDelContrato }}
+              mode="auth"
+              readOnly={['completado', 'firmado'].includes(contrato.estado)}
             />
           </div>
 
