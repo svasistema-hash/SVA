@@ -9,6 +9,7 @@ const { PDFS_PATH } = require('../config');
 const { encrypt, decrypt } = require('../encryption');
 const { puedeTransitar, siguienteForward, siguienteBackward, estadosPosibles } = require('../utils/contrato-transiciones');
 const { audit } = require('../utils/audit');
+const { freezeContratoGarantias, debeCongelar } = require('../utils/garantias-freeze');
 
 const router = express.Router();
 
@@ -250,23 +251,12 @@ router.get('/:id', (req, res, next) => {
     if (req.user.institucion_id && req.user.institucion_id !== row.institucion_id) {
       return res.status(403).json({ error: 'Sin acceso a este contrato', code: 403 });
     }
-    const fiadores = db
-      .prepare('SELECT * FROM fiadores WHERE contrato_id = ?')
-      .all(row.id)
-      .map((f) => {
-        let dpi = null;
-        if (f.dpi) {
-          try { dpi = decrypt(f.dpi); }
-          catch (e) { console.error(`[fiador dpi decrypt failed] id=${f.id}: ${e.message}`); }
-        }
-        // No exponer dpi_hash en la respuesta
-        const { dpi_hash, ...rest } = f;
-        return {
-          ...rest,
-          dpi,
-          datos_garantia: f.datos_garantia ? JSON.parse(f.datos_garantia) : null,
-        };
-      });
+    // Sprint garantías-desacopladas CP2: la tabla fiadores fue eliminada.
+    // CP3 reemplaza esta lectura por contrato_comparecientes JOIN comparecientes
+    // (con resolución de aportante para cada garantía). Hasta entonces se
+    // devuelve [] — el modelo viejo ya nunca tuvo INSERTs, así que el
+    // comportamiento observable es idéntico.
+    const fiadores = [];
     res.json({ ...parseJsonFields(row), fiadores });
   } catch (err) {
     next(err);
@@ -412,6 +402,17 @@ router.post('/:id/avanzar', (req, res, next) => {
       const tx = db.transaction(() => {
         db.prepare("UPDATE contratos SET estado = ?, completado_at = datetime('now') WHERE id = ?").run(nuevo, row.id);
         audit(req, 'CONTRATO_TRANSICION', 'contrato', row.id, { de: row.estado, a: nuevo });
+        // Sprint garantías-desacopladas CP3 — freeze trigger atómico.
+        // Copia los datos vivos de garantías y comparecientes a snapshot_*
+        // y setea congelado_en. A partir de aquí el motor F7 lee snapshot.
+        if (debeCongelar(nuevo)) {
+          const r = freezeContratoGarantias(row.id, db);
+          audit(req, 'CONTRATO_CONGELADO', 'contrato', row.id, {
+            estado: nuevo,
+            comparecientes_congelados: r.compsCongelados,
+            garantias_congeladas: r.garsCongeladas,
+          });
+        }
       });
       tx();
       result = { ok: true };

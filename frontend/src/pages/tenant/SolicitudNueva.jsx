@@ -21,7 +21,7 @@ import { listClientes, fetchCliente } from '../../api/clientes';
 import { createContrato, generarTokenCliente } from '../../api/contratos';
 import { nextCorrelativo } from '../../api/clientes';
 
-export default function FinancieraNueva() {
+export default function SolicitudNueva() {
   const { inst } = useOutletContext() || {};
   const nav = useNavigate();
   const [modelos, setModelos] = useState([]);
@@ -127,7 +127,7 @@ export default function FinancieraNueva() {
         cliente_existente: true,
       });
       // Estado del contrato ya es 'revision_tenant'. Redirigir al detalle para revisar.
-      nav(`/instituciones/${inst.slug}/financiera/${contrato.id}`);
+      nav(`/instituciones/${inst.slug}/solicitudes/${contrato.id}`);
     } catch (e) {
       setError(e.response?.data?.error || e.message);
     } finally {
@@ -137,7 +137,7 @@ export default function FinancieraNueva() {
 
   const onSeleccionTipo = (tipo) => {
     setShowTipoModal(false);
-    nav(`/instituciones/${inst.slug}/clientes/${tipo === 'juridica' ? 'juridicos' : 'individuales'}/nuevo?return_to=financiera_nueva`);
+    nav(`/instituciones/${inst.slug}/clientes/${tipo === 'juridica' ? 'juridicos' : 'individuales'}/nuevo?return_to=solicitud_nueva`);
   };
 
   if (resultado) {
@@ -148,7 +148,7 @@ export default function FinancieraNueva() {
     <>
       <Topbar
         title="Nueva solicitud"
-        crumbs={<Breadcrumb segments={tenantBreadcrumb(inst, 'Financiera', 'Nueva solicitud')} />}
+        crumbs={<Breadcrumb segments={tenantBreadcrumb(inst, 'Solicitudes', 'Nueva solicitud')} />}
       />
       <div className="app-content">
         <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16, maxWidth: 720 }}>
@@ -369,7 +369,7 @@ function ResultadoLink({ resultado, inst, onTerminar, onOtra }) {
     <>
       <Topbar
         title="Link generado"
-        crumbs={<Breadcrumb segments={tenantBreadcrumb(inst, 'Financiera', 'Nueva solicitud')} />}
+        crumbs={<Breadcrumb segments={tenantBreadcrumb(inst, 'Solicitudes', 'Nueva solicitud')} />}
       />
       <div className="app-content">
         <div style={{ maxWidth: 720 }}>

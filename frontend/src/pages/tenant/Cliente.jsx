@@ -63,10 +63,10 @@ export default function TenantCliente() {
   if (!inst || loading) return (<><Topbar title="Cargando…" /><div className="app-content"><div className="empty"><span className="spinner" /></div></div></>);
   if (!cliente) return (<><Topbar title="Cliente" /><div className="app-content"><div className="empty">Cliente no encontrado.</div></div></>);
 
-  // Sprint pendientes-4-7 Parte 4: wizard legacy retirado. Ahora redirige
-  // al flujo nuevo F1 con el cliente pre-seleccionado (via query param).
+  // Sprint garantías-desacopladas CP4-A: el módulo "Financiera" se renombró
+  // a "Solicitudes". El cliente se pre-selecciona vía query param.
   const onNuevoContrato = () => {
-    nav(`../financiera/nueva?cliente_id=${cliente.id}`);
+    nav(`../solicitudes/nueva?cliente_id=${cliente.id}`);
   };
 
   const isPendiente = cliente.estado === 'pendiente';

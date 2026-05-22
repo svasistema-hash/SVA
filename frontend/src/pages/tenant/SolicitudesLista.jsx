@@ -12,7 +12,7 @@ import Topbar from '../../components/Topbar';
 import Breadcrumb from '../../components/Breadcrumb';
 import { tenantBreadcrumb } from '../../utils/breadcrumb';
 import { fetchContratos } from '../../api/contratos';
-import { EstadoBadge, formatRelative } from './Financiera';
+import { EstadoBadge, formatRelative } from './Solicitudes';
 
 const FILTRO_POR_RUTA = {
   'en-curso':       { estado: 'en_curso',          titulo: 'En curso',     descripcion: 'Cliente completando el formulario' },
@@ -21,7 +21,7 @@ const FILTRO_POR_RUTA = {
   'completadas':    { estado: 'completado',        titulo: 'Completadas',  descripcion: 'Contratos firmados' },
 };
 
-export default function FinancieraLista() {
+export default function SolicitudesLista() {
   const { inst } = useOutletContext() || {};
   const nav = useNavigate();
   const loc = useLocation();
@@ -57,7 +57,7 @@ export default function FinancieraLista() {
     <>
       <Topbar
         title={filtro.titulo}
-        crumbs={<Breadcrumb segments={tenantBreadcrumb(inst, 'Financiera', filtro.titulo)} />}
+        crumbs={<Breadcrumb segments={tenantBreadcrumb(inst, 'Solicitudes', filtro.titulo)} />}
         actions={ruta === 'en-curso' && <button className="btn btn-gold" onClick={() => nav('../nueva')}>Nueva solicitud</button>}
       />
       <div className="app-content">
@@ -83,7 +83,7 @@ export default function FinancieraLista() {
               <thead><tr><th>No.</th><th>Cliente</th><th>Modelo</th><th>Monto</th><th>Días</th><th>Estado</th><th>Actualizado</th></tr></thead>
               <tbody>
                 {filtradas.map((c) => (
-                  <tr key={c.id} onClick={() => nav(`/instituciones/${inst.slug}/financiera/${c.id}`)} style={{ cursor: 'pointer' }}>
+                  <tr key={c.id} onClick={() => nav(`/instituciones/${inst.slug}/solicitudes/${c.id}`)} style={{ cursor: 'pointer' }}>
                     <td><code>{c.no_contrato}</code></td>
                     <td>{c.datos_cliente?.nombre || <span className="muted">—</span>}</td>
                     <td>{c.modelo_nombre}</td>

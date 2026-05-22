@@ -155,6 +155,216 @@ function buildCuentaClause(tipoPago, cuenta) {
   return '';
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Sprint garantías-desacopladas CP2.5 — lectura del modelo nuevo
+// ─────────────────────────────────────────────────────────────────
+//
+// Estas funciones leen contrato_garantias + garantias + contrato_comparecientes
+// + comparecientes (modelo nuevo). En CP3 se completarán con el freeze trigger
+// y la resolución snapshot-vs-vivo según estado del contrato. Para CP2.5 solo
+// se usan en estado borrador (vivo).
+
+// Sprint CP3 — regla snapshot vs vivo:
+//   - contrato.estado IN ('completado','firmado') → lee snapshot_* (inmutable).
+//   - Cualquier otro estado → lee tablas vivas con JOIN.
+// Si congelado_en de alguna fila es NULL aunque el estado sea congelable
+// (caso patológico), fallback a vivo para esa fila.
+
+function contratoEstaCongelado(contrato_id) {
+  const r = db.prepare('SELECT estado FROM contratos WHERE id = ?').get(contrato_id);
+  return r && ['completado', 'firmado'].includes(r.estado);
+}
+
+function loadGarantiasDelContrato(contrato_id) {
+  if (!contrato_id) return [];
+  const congelado = contratoEstaCongelado(contrato_id);
+  if (congelado) {
+    // Snapshot-first; si la fila no tiene snapshot (congelado_en NULL) recae a JOIN vivo.
+    return db.prepare(`
+      SELECT cg.garantia_id AS id,
+             COALESCE(cg.snapshot_tipo,                          g.tipo)                          AS tipo,
+             COALESCE(cg.snapshot_solidaria,                     g.solidaria)                     AS solidaria,
+             COALESCE(cg.snapshot_datos,                         g.datos)                         AS datos,
+             COALESCE(cg.snapshot_aportante_tipo,                g.aportante_tipo)                AS aportante_tipo,
+             COALESCE(cg.snapshot_aportante_cliente_id,          g.aportante_cliente_id)          AS aportante_cliente_id,
+             COALESCE(cg.snapshot_aportante_compareciente_id,    g.aportante_compareciente_id)    AS aportante_compareciente_id,
+             cg.orden, cg.congelado_en
+      FROM contrato_garantias cg
+      JOIN garantias g ON g.id = cg.garantia_id
+      WHERE cg.contrato_id = ?
+      ORDER BY cg.orden
+    `).all(contrato_id);
+  }
+  return db.prepare(`
+    SELECT g.id, g.tipo, g.solidaria, g.datos,
+           g.aportante_tipo, g.aportante_cliente_id, g.aportante_compareciente_id,
+           cg.orden, NULL AS congelado_en
+    FROM contrato_garantias cg
+    JOIN garantias g ON g.id = cg.garantia_id
+    WHERE cg.contrato_id = ?
+    ORDER BY cg.orden
+  `).all(contrato_id);
+}
+
+function loadComparecientesDelContrato(contrato_id) {
+  if (!contrato_id) return [];
+  const congelado = contratoEstaCongelado(contrato_id);
+  if (congelado) {
+    return db.prepare(`
+      SELECT cc.compareciente_id AS id,
+             COALESCE(cc.snapshot_nombre,       c.nombre)       AS nombre,
+             COALESCE(cc.snapshot_dpi,          c.dpi)          AS dpi,
+             COALESCE(cc.snapshot_profesion,    c.profesion)    AS profesion,
+             COALESCE(cc.snapshot_estado_civil, c.estado_civil) AS estado_civil,
+             COALESCE(cc.snapshot_domicilio,    c.domicilio)    AS domicilio,
+             COALESCE(cc.snapshot_rol,          cc.rol)         AS rol,
+             cc.orden, cc.agregado_por_actor, cc.congelado_en
+      FROM contrato_comparecientes cc
+      JOIN comparecientes c ON c.id = cc.compareciente_id
+      WHERE cc.contrato_id = ?
+      ORDER BY cc.orden
+    `).all(contrato_id);
+  }
+  return db.prepare(`
+    SELECT c.id, c.nombre, c.dpi, c.profesion, c.estado_civil, c.domicilio,
+           cc.rol, cc.orden, cc.agregado_por_actor, NULL AS congelado_en
+    FROM contrato_comparecientes cc
+    JOIN comparecientes c ON c.id = cc.compareciente_id
+    WHERE cc.contrato_id = ?
+    ORDER BY cc.orden
+  `).all(contrato_id);
+}
+
+function descifrarCompareciente(row) {
+  return {
+    id: row.id,
+    rol: row.rol,
+    orden: row.orden,
+    nombre: safeDecrypt(row.nombre, `compareciente.nombre id=${row.id}`),
+    dpi: safeDecrypt(row.dpi, `compareciente.dpi id=${row.id}`),
+    profesion: safeDecrypt(row.profesion, `compareciente.profesion id=${row.id}`),
+    estado_civil: safeDecrypt(row.estado_civil, `compareciente.estado_civil id=${row.id}`),
+    domicilio: safeDecrypt(row.domicilio, `compareciente.domicilio id=${row.id}`),
+  };
+}
+
+function descifrarGarantia(row) {
+  let datos = null;
+  if (row.datos) {
+    try { datos = JSON.parse(safeDecrypt(row.datos, `garantia.datos id=${row.id}`)); }
+    catch (e) { console.error(`[garantia.datos parse failed] id=${row.id}: ${e.message}`); }
+  }
+  return {
+    id: row.id,
+    tipo: row.tipo,
+    solidaria: row.solidaria,
+    orden: row.orden,
+    datos,
+    aportante_tipo: row.aportante_tipo,
+    aportante_cliente_id: row.aportante_cliente_id,
+    aportante_compareciente_id: row.aportante_compareciente_id,
+  };
+}
+
+// Devuelve el nombre del aportante de la garantía como string.
+// Si aportante es cliente, usa cliente.nombre del datos compilados.
+// Si es compareciente, busca por id en la lista de comparecientes descifrados.
+function nombreAportante(g, { cliente, comparecientes }) {
+  if (g.aportante_tipo === 'cliente') {
+    return (cliente?.nombre ? legalFormat.nombreEnMayusculas(cliente.nombre) : '[APORTANTE]');
+  }
+  if (g.aportante_tipo === 'compareciente') {
+    const c = comparecientes.find((x) => x.id === g.aportante_compareciente_id);
+    return c?.nombre ? legalFormat.nombreEnMayusculas(c.nombre) : '[APORTANTE]';
+  }
+  return '';
+}
+
+// Formatea un entero como "doce mil trescientos cuarenta y cinco (12,345)".
+// Útil para finca/folio/libro/serie y cualquier identificador numérico.
+function enteroLegal(n) {
+  if (n === null || n === undefined || n === '') return '[NÚMERO]';
+  try {
+    return legalFormat.formatoLegal(parseInt(n, 10), { tipo: 'entero' });
+  } catch { return '[NÚMERO]'; }
+}
+
+function diaLegal(n) {
+  if (n === null || n === undefined || n === '') return '[DÍA]';
+  const num = parseInt(n, 10);
+  if (!Number.isFinite(num) || num < 1 || num > 31) return '[DÍA]';
+  return `${legalFormat.diaALetras(num)} (${num})`;
+}
+
+// Construye el texto legal completo del bloque de garantías a partir del
+// modelo nuevo. Cero números sueltos. Aportante visible en cada garantía
+// real (hipotecaria/prendaria).
+function buildGarantiasLegalText({ garantias, comparecientes, cliente }) {
+  if (!Array.isArray(garantias) || garantias.length === 0) {
+    return 'garantía personal del Deudor sin afectación de bien específico';
+  }
+  const partes = garantias.map((g) => {
+    if (g.tipo === 'fiduciaria') {
+      const solidaria = g.solidaria
+        ? 'fianza solidaria, mancomunada y de pago'
+        : 'fianza simple';
+      const fiadores = comparecientes.filter((c) => c.rol === 'fiador');
+      if (fiadores.length === 0) return `${solidaria} a constituirse por los fiadores designados`;
+      const nombres = fiadores.map((f) => legalFormat.nombreEnMayusculas(f.nombre || '[FIADOR]'));
+      const lista = nombres.length === 1
+        ? nombres[0]
+        : nombres.slice(0, -1).join(', ') + ' y ' + nombres[nombres.length - 1];
+      return `${solidaria} otorgada por ${lista}`;
+    }
+    if (g.tipo === 'hipotecaria') {
+      const d = g.datos || {};
+      const ubicacion = d.direccion ? `, ubicado en ${d.direccion}` : '';
+      const area = d.area ? `, con un área de ${d.area}` : '';
+      const registro = d.registro || 'Registro General de la Propiedad';
+      return `hipoteca de primer grado sobre el inmueble inscrito al número de finca ${enteroLegal(d.finca)}, folio ${enteroLegal(d.folio)}, libro ${enteroLegal(d.libro)} del ${registro}${ubicacion}${area}, aportada por ${nombreAportante(g, { cliente, comparecientes })}`;
+    }
+    if (g.tipo === 'prendaria') {
+      const d = g.datos || {};
+      const tipoBien = d.tipo_bien || 'vehículo automotor';
+      const marca = d.marca ? `, marca ${d.marca}` : '';
+      const modelo = d.modelo ? `, modelo ${d.modelo}` : '';
+      const serie = d.serie ? `, serie ${d.serie}` : '';
+      const placa = d.placa ? `, placa ${d.placa}` : '';
+      return `prenda sin desplazamiento sobre ${tipoBien}${marca}${modelo}${serie}${placa}, aportada por ${nombreAportante(g, { cliente, comparecientes })}`;
+    }
+    return '';
+  }).filter(Boolean);
+
+  if (partes.length === 1) return partes[0];
+  return partes.slice(0, -1).join('; ') + '; e ' + partes[partes.length - 1];
+}
+
+// Comparecencia super-variable: cliente + comparecientes + banco, todo
+// junto en una sola frase de apertura del contrato. Reemplaza el bloque
+// inline que usaba {{cliente_compareciente}} + {{banco_compareciente}}.
+function buildComparecenciaText({ fecha_contrato_apertura, cliente_compareciente, banco_compareciente, comparecientes, cliente_articulo, cliente_rol_deudor }) {
+  const partes = [];
+  partes.push(`${fecha_contrato_apertura || 'En la ciudad de Guatemala'} comparecen, por una parte, ${banco_compareciente || '[BANCO]'} a quien en lo sucesivo se denominará «EL ACREEDOR»`);
+  partes.push(`y por la otra parte, ${cliente_compareciente || '[CLIENTE]'} a quien en lo sucesivo se denominará «${cliente_articulo || 'EL'} ${cliente_rol_deudor || 'DEUDOR'}»`);
+  if (Array.isArray(comparecientes) && comparecientes.length > 0) {
+    const frases = comparecientes.map((c) => {
+      const rolTxt = c.rol === 'fiador' ? 'en calidad de FIADOR' : 'en calidad de TERCERO GARANTE';
+      const persona = legalFormat.renderClienteCompareciente({
+        nombre: c.nombre,
+        dpi: c.dpi,
+        genero: c.genero || 'M',
+        estado_civil: c.estado_civil,
+        profesion: c.profesion,
+        domicilio: c.domicilio,
+        domicilio_local: !c.domicilio,
+      });
+      return `${persona}, ${rolTxt}`;
+    });
+    partes.push('y como comparecientes adicionales: ' + frases.join('; '));
+  }
+  return partes.join('; ') + '. Ambas partes celebran el presente contrato conforme a las cláusulas siguientes.';
+}
+
 function buildVars({ representante, institucion, cliente, credito, garantia, firmas }) {
   const tipoKey = credito?.tipo_pago || 'debito_automatico';
   const fechaInicioISO = credito?.fecha_inicio || '';
@@ -273,6 +483,17 @@ function buildLegalVars({ cliente, credito, firmas, garantia, representante, ins
     ? safe(() => legalFormat.renderRepresentanteBanco(institucion, representante))
     : '';
 
+  // Sprint garantías-desacopladas CP2.5 — días en formato legal.
+  const dia_pago_inicio_legal = credito?.dia_pago_inicio ? diaLegal(credito.dia_pago_inicio) : '';
+  const dia_pago_fin_legal    = credito?.dia_pago_fin    ? diaLegal(credito.dia_pago_fin)    : '';
+  // {{dia_pago_legal}} alias para clausulas que tienen un único día.
+  const dia_pago_legal = credito?.dia_pago ? diaLegal(credito.dia_pago) : '';
+  // {{cuotas_incumplimiento_legal}} para mora — el número de cuotas en mora
+  // que dispara el vencimiento anticipado.
+  const cuotas_incumplimiento_legal = credito?.cuotas_incumplimiento
+    ? (() => { try { return legalFormat.formatoLegal(parseInt(credito.cuotas_incumplimiento, 10), { tipo: 'plazo', sufijo: 'cuotas' }); } catch { return ''; } })()
+    : '';
+
   return {
     cliente_compareciente,
     banco_compareciente,
@@ -295,10 +516,14 @@ function buildLegalVars({ cliente, credito, firmas, garantia, representante, ins
     cliente_rol_acreedor,
     cliente_nombre_upper,
     cliente_dpi_letras,
+    dia_pago_inicio_legal,
+    dia_pago_fin_legal,
+    dia_pago_legal,
+    cuotas_incumplimiento_legal,
   };
 }
 
-function compilarContrato(modelo_id, datos) {
+function compilarContrato(modelo_id, datos, opts = {}) {
   const modelo = db.prepare('SELECT * FROM modelos WHERE id = ?').get(modelo_id);
   if (!modelo) throw Object.assign(new Error('Modelo no encontrado'), { status: 404 });
 
@@ -320,6 +545,35 @@ function compilarContrato(modelo_id, datos) {
   const firmas = datos?.datos_firmas || {};
 
   const vars = buildVars({ representante, institucion, cliente, credito, garantia, firmas });
+
+  // Sprint garantías-desacopladas CP2.5 — overlay con datos del modelo nuevo.
+  // Si opts.contrato_id está presente, leemos garantias + comparecientes de las
+  // tablas nuevas y producimos {{garantias_legal}}, {{comparecencia}},
+  // {{aportante_garantia_1}}, {{aportante_garantia_2}}, ...
+  if (opts.contrato_id) {
+    const garantiasInfladas = loadGarantiasDelContrato(opts.contrato_id).map(descifrarGarantia);
+    const comparecientesInflados = loadComparecientesDelContrato(opts.contrato_id).map(descifrarCompareciente);
+
+    vars.garantias_legal = buildGarantiasLegalText({
+      garantias: garantiasInfladas,
+      comparecientes: comparecientesInflados,
+      cliente,
+    });
+
+    vars.comparecencia = buildComparecenciaText({
+      fecha_contrato_apertura: vars.fecha_contrato_apertura,
+      cliente_compareciente: vars.cliente_compareciente,
+      banco_compareciente: vars.banco_compareciente,
+      comparecientes: comparecientesInflados,
+      cliente_articulo: vars.cliente_articulo,
+      cliente_rol_deudor: vars.cliente_rol_deudor,
+    });
+
+    // Aportantes indexados (1-based).
+    garantiasInfladas.forEach((g, i) => {
+      vars[`aportante_garantia_${i + 1}`] = nombreAportante(g, { cliente, comparecientes: comparecientesInflados });
+    });
+  }
 
   const clausulas = clausulasRaw.map((c) => ({
     codigo: c.codigo,
@@ -517,6 +771,15 @@ module.exports = {
   buildRepEscritura,
   interpolate,
   CLAUSULAS_BASE,
+  // Sprint garantías-desacopladas CP3 — utilidades expuestas para reuso
+  // por tests y endpoints.
+  loadGarantiasDelContrato,
+  loadComparecientesDelContrato,
+  descifrarGarantia,
+  descifrarCompareciente,
+  buildGarantiasLegalText,
+  buildComparecenciaText,
+  contratoEstaCongelado,
 };
 
 if (require.main === module) {

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import ProtectedRoute from './components/ProtectedRoute';
 import AppLayout from './components/AppLayout';
@@ -7,9 +8,9 @@ import SolicitudPublica from './pages/SolicitudPublica';
 import Dashboard from './pages/Dashboard';
 import Instituciones from './pages/Instituciones';
 import Contratos from './pages/Contratos';
-import Contrato from './pages/Contrato';
-// Wizard legacy: ya no se monta como ruta. Sprint pendientes-4-7 Parte 4
-// redirige /contratos/nuevo → /financiera/nueva.
+// Sprint garantías-desacopladas CP4-A: Contrato.jsx (vista vieja con preview)
+// ya no se monta como ruta — toda entrada al detalle pasa por SolicitudDetalle.
+// El archivo se conserva por ahora para incorporar el preview/PDF en CP4-A.5.
 import Pendientes from './pages/bufete/Pendientes';
 import PendienteDetalle from './pages/bufete/PendienteDetalle';
 import VersionFooter from './components/VersionFooter';
@@ -24,12 +25,13 @@ import TenantContratos from './pages/tenant/Contratos';
 import TenantModelos from './pages/tenant/Modelos';
 import TenantModeloEdit from './pages/tenant/ModeloEdit';
 import TenantConfiguracion from './pages/tenant/Configuracion';
-import TenantSolicitudes from './pages/tenant/Solicitudes';
 import TenantReportes from './pages/tenant/Reportes';
-import Financiera from './pages/tenant/Financiera';
-import FinancieraNueva from './pages/tenant/FinancieraNueva';
-import FinancieraLista from './pages/tenant/FinancieraLista';
-import FinancieraDetalle from './pages/tenant/FinancieraDetalle';
+// Sprint garantías-desacopladas CP4-A — rename del módulo "Financiera" a "Solicitudes".
+// "Financiera" sobrevive solo como TIPO de institución, no como nombre de módulo.
+import TenantSolicitudes from './pages/tenant/Solicitudes';
+import SolicitudNueva from './pages/tenant/SolicitudNueva';
+import SolicitudesLista from './pages/tenant/SolicitudesLista';
+import SolicitudDetalle from './pages/tenant/SolicitudDetalle';
 
 export default function App() {
   return (
@@ -42,7 +44,12 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/instituciones" element={<Instituciones />} />
           <Route path="/contratos" element={<Contratos />} />
-          <Route path="/contratos/:id" element={<Contrato />} />
+          {/* Sprint garantías-desacopladas CP4-A: vista unificada del contrato.
+              El /contratos/:id global redirige al detalle dentro de la
+              institución correspondiente: /instituciones/:slug/solicitudes/:id.
+              Eso resuelve la duplicación de componentes (antes: Contrato.jsx
+              + FinancieraDetalle.jsx). */}
+          <Route path="/contratos/:id" element={<RedirectContratoGlobal />} />
           {/* F1 C5: panel del bufete */}
           <Route path="/pendientes" element={<Pendientes />} />
           <Route path="/pendientes/:id" element={<PendienteDetalle />} />
@@ -65,23 +72,38 @@ export default function App() {
           <Route path="clientes/juridicos/:id" element={<ClienteJuridicoDetalle />} />
           <Route path="clientes/juridicos/:id/editar" element={<ClienteJuridicoNuevo />} />
           <Route path="contratos" element={<TenantContratos />} />
-          {/* Wizard legacy redirige al flujo nuevo F1 (Financiera). */}
-          <Route path="contratos/nuevo" element={<RedirectToFinancieraNueva />} />
-          <Route path="contratos/:id/editar" element={<RedirectToFinancieraDetalle />} />
-          <Route path="contratos/:id" element={<Contrato />} />
+          {/* Sprint garantías-desacopladas CP4-A:
+              - Wizard legacy redirige al flujo nuevo "Solicitudes" (antes "Financiera").
+              - /contratos/:id (vista vieja con preview PDF) se unifica con /solicitudes/:id.
+                Toda entrada al detalle de un contrato pasa por SolicitudDetalle ahora.
+          */}
+          <Route path="contratos/nuevo" element={<RedirectToSolicitudNueva />} />
+          <Route path="contratos/:id/editar" element={<RedirectToSolicitudDetalle />} />
+          <Route path="contratos/:id" element={<RedirectToSolicitudDetalle />} />
           <Route path="modelos" element={<TenantModelos />} />
           <Route path="modelos/:id" element={<TenantModeloEdit />} />
           <Route path="configuracion" element={<TenantConfiguracion />} />
-          <Route path="solicitudes" element={<TenantSolicitudes />} />
           <Route path="reportes" element={<TenantReportes />} />
-          {/* F1 C4: módulo Financiera */}
-          <Route path="financiera" element={<Financiera />} />
-          <Route path="financiera/nueva" element={<FinancieraNueva />} />
-          <Route path="financiera/en-curso" element={<FinancieraLista />} />
-          <Route path="financiera/en-revision" element={<FinancieraLista />} />
-          <Route path="financiera/con-bufete" element={<FinancieraLista />} />
-          <Route path="financiera/completadas" element={<FinancieraLista />} />
-          <Route path="financiera/:id" element={<FinancieraDetalle />} />
+          {/* Sprint garantías-desacopladas CP4-A — Módulo "Solicitudes"
+              (antes "Financiera"). El segmento de módulo cambia; el TIPO de
+              institución 'financiera' sigue intacto, y los slugs (banco-rsg,
+              financiera-del-sur, etc.) también. */}
+          <Route path="solicitudes" element={<TenantSolicitudes />} />
+          <Route path="solicitudes/nueva" element={<SolicitudNueva />} />
+          <Route path="solicitudes/en-curso" element={<SolicitudesLista />} />
+          <Route path="solicitudes/en-revision" element={<SolicitudesLista />} />
+          <Route path="solicitudes/con-bufete" element={<SolicitudesLista />} />
+          <Route path="solicitudes/completadas" element={<SolicitudesLista />} />
+          <Route path="solicitudes/:id" element={<SolicitudDetalle />} />
+          {/* Redirects permanentes /financiera/* → /solicitudes/* para no romper
+              links guardados, bookmarks ni código externo que apunte al path viejo. */}
+          <Route path="financiera" element={<Navigate to="../solicitudes" replace />} />
+          <Route path="financiera/nueva" element={<Navigate to="../solicitudes/nueva" replace />} />
+          <Route path="financiera/en-curso" element={<Navigate to="../solicitudes/en-curso" replace />} />
+          <Route path="financiera/en-revision" element={<Navigate to="../solicitudes/en-revision" replace />} />
+          <Route path="financiera/con-bufete" element={<Navigate to="../solicitudes/con-bufete" replace />} />
+          <Route path="financiera/completadas" element={<Navigate to="../solicitudes/completadas" replace />} />
+          <Route path="financiera/:id" element={<RedirectFinancieraId />} />
         </Route>
 
         <Route path="*" element={<NotFound />} />
@@ -91,17 +113,39 @@ export default function App() {
   );
 }
 
-// Redirects del Wizard legacy al flujo nuevo F1. Permanecen para que links
-// guardados, bookmarks o cualquier código externo que apunte al path viejo
-// no se rompa. Tras unos meses, considerar reemplazar por NotFound.
-function RedirectToFinancieraNueva() {
+// Redirects del Wizard legacy al flujo nuevo "Solicitudes" (antes "Financiera").
+// Permanecen para que links guardados, bookmarks o cualquier código externo
+// que apunte al path viejo no se rompa.
+function RedirectToSolicitudNueva() {
   const { slug } = useParams();
-  return <Navigate to={`/instituciones/${slug}/financiera/nueva`} replace />;
+  return <Navigate to={`/instituciones/${slug}/solicitudes/nueva`} replace />;
 }
 
-function RedirectToFinancieraDetalle() {
+function RedirectToSolicitudDetalle() {
   const { slug, id } = useParams();
-  return <Navigate to={`/instituciones/${slug}/financiera/${id}`} replace />;
+  return <Navigate to={`/instituciones/${slug}/solicitudes/${id}`} replace />;
+}
+
+// Redirect /instituciones/:slug/financiera/:id → /instituciones/:slug/solicitudes/:id
+function RedirectFinancieraId() {
+  const { slug, id } = useParams();
+  return <Navigate to={`/instituciones/${slug}/solicitudes/${id}`} replace />;
+}
+
+// Redirect /contratos/:id (vista admin/bufete global) → vista tenant unificada.
+// Necesita resolver el slug del contrato; lo fetcheamos y redirigimos.
+function RedirectContratoGlobal() {
+  const { id } = useParams();
+  const [target, setTarget] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    import('./api/contratos').then(({ fetchContrato }) => fetchContrato(id))
+      .then((c) => setTarget(`/instituciones/${c.institucion_slug}/solicitudes/${id}`))
+      .catch((e) => setError(e.response?.data?.error || e.message));
+  }, [id]);
+  if (error) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-dim)' }}>Contrato no encontrado: {error}</div>;
+  if (!target) return <div style={{ padding: 40, textAlign: 'center' }}><span className="spinner" /></div>;
+  return <Navigate to={target} replace />;
 }
 
 // F1 hotfix P6: catch-all visible en lugar de redirect silencioso al dashboard.
