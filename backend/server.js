@@ -42,6 +42,18 @@ try {
   db.prepare(
     "UPDATE instituciones SET correlativo_prefijo = 'BI' WHERE slug = 'banco-rsg' AND correlativo_prefijo IS NULL"
   ).run();
+
+  // Sprint pendientes-4-7 Parte 5: corregir motivo de anulación de CT-2026-0001
+  // (guardado con encoding cp1252 al hacer curl bash desde Windows, quedó con
+  // bytes U+FFFD en lugar de ó/á/í). Idempotente: si ya está bien, no toca nada.
+  db.prepare(`
+    UPDATE contratos
+    SET anulado_motivo = 'Contrato histórico con correlativo legacy CT-, generado antes del patch que establece BI- como prefijo para Banco RSG.'
+    WHERE no_contrato = 'CT-2026-0001'
+      AND estado = 'anulada'
+      AND anulado_motivo IS NOT NULL
+      AND anulado_motivo NOT LIKE '%histórico%'
+  `).run();
 } catch (e) {
   console.warn('[patch] No se pudo aplicar patch idempotente:', e.message);
 }

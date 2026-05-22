@@ -1,3 +1,19 @@
+// @deprecated DESDE Sprint pendientes-4-7 Parte 4 (2026-05-21).
+// Este Wizard fue el flujo original del banco para crear/editar contratos.
+// Reemplazado por el flujo F1: /tenant/financiera/nueva (crear) y
+// /tenant/financiera/:id (editar inline).
+//
+// Las rutas /contratos/nuevo y /contratos/:id/editar fueron convertidas en
+// redirects al flujo nuevo (ver App.jsx). Este archivo se conserva por:
+//   - posibles referencias residuales que no detectamos
+//   - rescue path si el flujo nuevo presenta problemas en producción
+//
+// NO IMPORTAR este componente en código nuevo. Si necesitás algo de aquí,
+// portalo al flujo F1 en su lugar.
+//
+// Pendiente: eliminar en sprint posterior cuando se confirme que no se usa
+// en producción durante un ciclo completo.
+
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Topbar from '../components/Topbar';

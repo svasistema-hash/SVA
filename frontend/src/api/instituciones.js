@@ -7,6 +7,7 @@ export const createInstitucion = (data) => client.post('/instituciones', data).t
 export const updateInstitucion = (slug, data) => client.put(`/instituciones/${slug}`, data).then((r) => r.data);
 export const createModelo = (slug, data) => client.post(`/instituciones/${slug}/modelos`, data).then((r) => r.data);
 export const duplicarModelo = (slug, id, nombre) => client.post(`/instituciones/${slug}/modelos/${id}/duplicar`, nombre ? { nombre } : {}).then((r) => r.data);
+export const clonarModelo = (id, nombre) => client.post(`/modelos/${id}/clonar`, nombre ? { nombre } : {}).then((r) => r.data);
 export const fetchModelo = (slug, id) => client.get(`/instituciones/${slug}/modelos/${id}`).then((r) => r.data);
 export const updateModelo = (slug, id, data) => client.put(`/instituciones/${slug}/modelos/${id}`, data).then((r) => r.data);
 export const updateClausula = (slug, id, data) => client.put(`/instituciones/${slug}/clausulas/${id}`, data).then((r) => r.data);

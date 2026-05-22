@@ -1,3 +1,11 @@
+// @deprecated DESDE Sprint pendientes-4-7 Parte 4 (2026-05-21).
+// Este componente solo navegaba al Wizard legacy (/contratos/nuevo) que ya
+// fue retirado. Sin imports activos en el código (verificado con grep). Se
+// conserva por si algún sprint en curso lo referencia. Eliminar después.
+//
+// Reemplazo: el módulo Financiera permite crear contratos directamente desde
+// /tenant/financiera/nueva con selector de modelo en el form.
+
 import { useNavigate, useParams } from 'react-router-dom';
 import { useStore } from '../store/useStore';
 

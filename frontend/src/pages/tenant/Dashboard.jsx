@@ -59,7 +59,7 @@ export default function TenantDashboard() {
         actions={
           <>
             <button className="btn" onClick={() => nav('solicitudes')}>Ver solicitudes</button>
-            <button className="btn btn-gold" onClick={() => nav('contratos/nuevo')}>Nuevo contrato</button>
+            <button className="btn btn-gold" onClick={() => nav('financiera/nueva')}>Nuevo contrato</button>
           </>
         }
       />
@@ -98,7 +98,7 @@ export default function TenantDashboard() {
           <div className="card">
             <div className="card-h"><h3>Acciones rápidas</h3></div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <button className="btn btn-gold" onClick={() => nav('contratos/nuevo')}>Nuevo contrato</button>
+              <button className="btn btn-gold" onClick={() => nav('financiera/nueva')}>Nuevo contrato</button>
               <button className="btn" onClick={() => nav('solicitudes')}>Ver solicitudes pendientes</button>
               <button className="btn" onClick={() => nav('clientes')}>Ver clientes</button>
               <button className="btn" onClick={() => nav('modelos')}>Gestionar modelos</button>

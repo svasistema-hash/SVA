@@ -3,7 +3,7 @@ import { useNavigate, useOutletContext } from 'react-router-dom';
 import Topbar from '../../components/Topbar';
 import Breadcrumb from '../../components/Breadcrumb';
 import { tenantBreadcrumb } from '../../utils/breadcrumb';
-import { fetchModelos, updateModelo, createModelo, duplicarModelo } from '../../api/instituciones';
+import { fetchModelos, updateModelo, createModelo, clonarModelo } from '../../api/instituciones';
 
 const TIPOS = [
   { v: 'personal', l: 'Personal / Fiduciaria', clausulas: 9 },
@@ -36,15 +36,16 @@ export default function TenantModelos() {
     }
   };
 
-  const duplicar = async (m) => {
-    const nombre = prompt(`Nombre del modelo duplicado:`, `${m.nombre} (copia)`);
+  const clonar = async (m) => {
+    const nombre = prompt(`Nombre del modelo clonado:`, `${m.nombre} (copia)`);
     if (!nombre || !nombre.trim()) return;
     try {
-      const nuevo = await duplicarModelo(inst.slug, m.id, nombre.trim());
+      const nuevo = await clonarModelo(m.id, nombre.trim());
+      alert(`Modelo duplicado: ${nuevo.clausulas_copiadas} cláusulas copiadas. Queda inactivo hasta que lo actives manualmente.`);
       reload();
       nav(`${nuevo.id}`);
     } catch (e) {
-      alert('Error al duplicar: ' + (e.response?.data?.error || e.message));
+      alert('Error al clonar: ' + (e.response?.data?.error || e.message));
     }
   };
 
@@ -86,8 +87,8 @@ export default function TenantModelos() {
                 <div className="clausulas">{(m.clausulas || []).length} cláusulas</div>
                 <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button className="btn btn-gold btn-sm" onClick={() => nav(`/instituciones/${inst.slug}/modelos/${m.id}`)}>Editar</button>
-                  <button className="btn btn-sm" onClick={() => duplicar(m)}>
-                    Duplicar
+                  <button className="btn btn-sm" onClick={() => clonar(m)}>
+                    Clonar
                   </button>
                   <button className="btn btn-sm" onClick={() => toggle(m)}>
                     {m.activo ? 'Desactivar' : 'Activar'}
