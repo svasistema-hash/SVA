@@ -162,11 +162,14 @@ export default function ComparecientesEditor({
 
 function FormCompareciente({ onSubmit, onCancel }) {
   const [d, setD] = useState({
-    nombre: '', dpi: '', profesion: '', estado_civil: '', domicilio: '',
+    nombre: '', dpi: '', fecha_nac: '', genero: '',
+    profesion: '', estado_civil: '', domicilio: '',
     rol: 'fiador',
   });
   const [submitting, setSubmitting] = useState(false);
-  const valid = d.nombre.trim() && d.dpi.trim() && d.rol;
+  // Sprint CP5 — fecha_nac y genero ahora son requeridos: sin esos campos el
+  // motor F7 renderiza '[EDAD]' y el contrato queda inválido para firma.
+  const valid = d.nombre.trim() && d.dpi.trim() && d.rol && d.fecha_nac && d.genero;
 
   const submit = async (e) => {
     e?.preventDefault();
@@ -184,6 +187,18 @@ function FormCompareciente({ onSubmit, onCancel }) {
         </div>
         <div className="field"><label>DPI *</label>
           <input className="input" value={d.dpi} onChange={(e) => setD({ ...d, dpi: e.target.value })} placeholder="XXXX XXXXX XXXX" />
+        </div>
+      </div>
+      <div className="row-2">
+        <div className="field"><label>Fecha de nacimiento *</label>
+          <input className="input" type="date" value={d.fecha_nac} onChange={(e) => setD({ ...d, fecha_nac: e.target.value })} max={new Date().toISOString().slice(0, 10)} />
+        </div>
+        <div className="field"><label>Género *</label>
+          <select className="input" value={d.genero} onChange={(e) => setD({ ...d, genero: e.target.value })}>
+            <option value="">—</option>
+            <option value="M">Masculino</option>
+            <option value="F">Femenino</option>
+          </select>
         </div>
       </div>
       <div className="row-2">

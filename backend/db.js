@@ -340,6 +340,13 @@ db.exec(`
     profesion TEXT,                  -- ciphertext AES-GCM
     estado_civil TEXT,               -- ciphertext AES-GCM
     domicilio TEXT,                  -- ciphertext AES-GCM
+    -- Sprint garantías-desacopladas CP5 — fecha_nac + genero requeridos por el
+    -- motor F7 para generar la comparecencia con edad calculada y concordancia
+    -- de género. Sin estos, el motor renderiza '[EDAD]' y el contrato queda
+    -- inválido para firma. Ambos plaintext (no son PII sensible — DPI ya
+    -- contiene la fecha de nacimiento implícita).
+    fecha_nac TEXT,
+    genero TEXT,
     creado_por_user_id INTEGER REFERENCES users(id),
     creado_en TEXT NOT NULL DEFAULT (datetime('now')),
     actualizado_en TEXT,
@@ -488,5 +495,12 @@ if (!repCols.includes('fecha_nac'))    db.exec("ALTER TABLE representantes ADD C
 if (!repCols.includes('genero'))       db.exec("ALTER TABLE representantes ADD COLUMN genero TEXT");
 if (!repCols.includes('estado_civil')) db.exec("ALTER TABLE representantes ADD COLUMN estado_civil TEXT");
 if (!repCols.includes('profesion'))    db.exec("ALTER TABLE representantes ADD COLUMN profesion TEXT");
+
+// Sprint garantías-desacopladas CP5: mismo fix en comparecientes — sin
+// fecha_nac/genero el motor F7 genera '[EDAD]' en la comparecencia de cada
+// fiador/tercero, dejando el contrato no apto para firma.
+const compCols = db.prepare('PRAGMA table_info(comparecientes)').all().map((c) => c.name);
+if (!compCols.includes('fecha_nac')) db.exec("ALTER TABLE comparecientes ADD COLUMN fecha_nac TEXT");
+if (!compCols.includes('genero'))    db.exec("ALTER TABLE comparecientes ADD COLUMN genero TEXT");
 
 module.exports = db;

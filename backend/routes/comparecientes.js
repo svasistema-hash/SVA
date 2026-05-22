@@ -116,7 +116,7 @@ router.post('/', (req, res, next) => {
     if (!instId) return res.status(400).json({ error: 'institucion_id requerido', code: 400 });
     if (!canAccessInst(req.user, instId)) return res.status(403).json({ error: 'Sin acceso', code: 403 });
 
-    const { nombre, dpi, profesion, estado_civil, domicilio } = req.body;
+    const { nombre, dpi, profesion, estado_civil, domicilio, fecha_nac, genero } = req.body;
     const dpiH = hashFor('dpi', dpi);
     const existing = db.prepare(
       'SELECT id FROM comparecientes WHERE institucion_id = ? AND dpi_hash = ?'
@@ -132,8 +132,8 @@ router.post('/', (req, res, next) => {
     const info = db.prepare(`
       INSERT INTO comparecientes (
         institucion_id, nombre, nombre_hash, dpi, dpi_hash,
-        profesion, estado_civil, domicilio, creado_por_user_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        profesion, estado_civil, domicilio, fecha_nac, genero, creado_por_user_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       instId,
       encrypt(nombre), hashFor('nombre', nombre),
@@ -141,6 +141,8 @@ router.post('/', (req, res, next) => {
       profesion ? encrypt(profesion) : null,
       estado_civil ? encrypt(estado_civil) : null,
       domicilio ? encrypt(domicilio) : null,
+      fecha_nac || null,
+      genero || null,
       req.user.userId || null,
     );
 
@@ -200,6 +202,8 @@ router.put('/:id', (req, res, next) => {
       profesion: (v) => { updates.push('profesion = ?'); params.push(v ? encrypt(v) : null); cambios.profesion = true; },
       estado_civil: (v) => { updates.push('estado_civil = ?'); params.push(v ? encrypt(v) : null); cambios.estado_civil = true; },
       domicilio: (v) => { updates.push('domicilio = ?'); params.push(v ? encrypt(v) : null); cambios.domicilio = true; },
+      fecha_nac: (v) => { updates.push('fecha_nac = ?'); params.push(v || null); cambios.fecha_nac = true; },
+      genero: (v) => { updates.push('genero = ?'); params.push(v || null); cambios.genero = true; },
     };
     for (const [k, fn] of Object.entries(map)) {
       if (k in req.body) fn(req.body[k]);
