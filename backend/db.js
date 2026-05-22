@@ -238,19 +238,11 @@ db.exec(`
     UPDATE contratos SET updated_at = datetime('now') WHERE id = OLD.id;
   END;
 
-  CREATE TABLE IF NOT EXISTS fiadores (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    contrato_id INTEGER NOT NULL REFERENCES contratos(id) ON DELETE CASCADE,
-    nombre TEXT NOT NULL,
-    dpi TEXT,                  -- ciphertext AES-GCM
-    profesion TEXT,
-    domicilio TEXT,
-    tipo_garantia TEXT,
-    datos_garantia TEXT,       -- JSON plaintext (datos de la garantía aportada)
-    dpi_hash TEXT              -- HMAC purpose 'dpi'
-  );
-  CREATE INDEX IF NOT EXISTS idx_fiadores_contrato ON fiadores(contrato_id);
-  CREATE INDEX IF NOT EXISTS idx_fiadores_dpi_hash ON fiadores(dpi_hash);
+  -- Sprint garantías-desacopladas CP2 (2026-05-21): la tabla 'fiadores' fue
+  -- eliminada. Reemplazada por 'comparecientes' (catálogo) + 'contrato_comparecientes'
+  -- (pivote con rol fiador|tercero_garante). La migración manual
+  -- (scripts/migrate-garantias-desacopladas.js) hace DROP TABLE fiadores
+  -- previa verificación de que esté vacía.
 
   CREATE TABLE IF NOT EXISTS notarios (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -320,6 +312,121 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_audit_log_entidad ON audit_log(entidad_tipo, entidad_id);
   CREATE INDEX IF NOT EXISTS idx_audit_log_user ON audit_log(user_id);
   CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON audit_log(timestamp);
+
+  -- ─────────────────────────────────────────────────────────────────
+  -- Sprint garantías-desacopladas CP2 — modelo real de personas/garantías.
+  -- Doc: docs/sprint-pendientes-4-7-parte-6-diagnostico.md (v2).
+  -- 4 tablas nuevas. PII cifrada AES-GCM con HMAC para búsqueda exacta.
+  -- La tabla 'fiadores' vieja queda obsoleta y se elimina en
+  -- scripts/migrate-garantias-desacopladas.js.
+  -- ─────────────────────────────────────────────────────────────────
+
+  -- Catálogo de personas comparecientes (fiadores + terceros garantes).
+  -- El rol vive en la pivote contrato_comparecientes, no aquí: una misma
+  -- persona puede ser fiador en un contrato y tercero garante en otro.
+  CREATE TABLE IF NOT EXISTS comparecientes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    institucion_id INTEGER NOT NULL REFERENCES instituciones(id) ON DELETE CASCADE,
+    nombre TEXT NOT NULL,            -- ciphertext AES-GCM
+    nombre_hash TEXT NOT NULL,       -- HMAC purpose 'nombre' (búsqueda exacta)
+    dpi TEXT NOT NULL,               -- ciphertext AES-GCM
+    dpi_hash TEXT NOT NULL,          -- HMAC purpose 'dpi' (UNIQUE por institución)
+    profesion TEXT,                  -- ciphertext AES-GCM
+    estado_civil TEXT,               -- ciphertext AES-GCM
+    domicilio TEXT,                  -- ciphertext AES-GCM
+    creado_por_user_id INTEGER REFERENCES users(id),
+    creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+    actualizado_en TEXT,
+    UNIQUE (institucion_id, dpi_hash)
+  );
+  CREATE INDEX IF NOT EXISTS idx_comparecientes_inst ON comparecientes(institucion_id);
+  CREATE INDEX IF NOT EXISTS idx_comparecientes_nombre_hash ON comparecientes(institucion_id, nombre_hash);
+
+  -- Catálogo de garantías reutilizable por institución.
+  -- aportante_* es NULL para fiduciaria, NOT NULL para hipotecaria/prendaria.
+  -- El CHECK al pie garantiza la exclusión mutua cliente vs compareciente.
+  CREATE TABLE IF NOT EXISTS garantias (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    institucion_id INTEGER NOT NULL REFERENCES instituciones(id) ON DELETE CASCADE,
+    tipo TEXT NOT NULL CHECK (tipo IN ('fiduciaria','hipotecaria','prendaria')),
+    solidaria INTEGER NOT NULL DEFAULT 0,  -- solo aplica si tipo='fiduciaria'
+    datos TEXT,                            -- ciphertext AES-GCM de JSON. NULL si fiduciaria.
+    aportante_tipo TEXT
+      CHECK (aportante_tipo IS NULL OR aportante_tipo IN ('cliente','compareciente')),
+    aportante_cliente_id INTEGER REFERENCES clientes(id),
+    aportante_compareciente_id INTEGER REFERENCES comparecientes(id),
+    creado_por_user_id INTEGER REFERENCES users(id),
+    creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+    actualizado_en TEXT,
+    CHECK (
+      (tipo = 'fiduciaria'
+        AND datos IS NULL
+        AND aportante_tipo IS NULL
+        AND aportante_cliente_id IS NULL
+        AND aportante_compareciente_id IS NULL
+        AND solidaria IN (0, 1))
+      OR
+      (tipo IN ('hipotecaria','prendaria')
+        AND datos IS NOT NULL
+        AND aportante_tipo = 'cliente'
+        AND aportante_cliente_id IS NOT NULL
+        AND aportante_compareciente_id IS NULL
+        AND solidaria = 0)
+      OR
+      (tipo IN ('hipotecaria','prendaria')
+        AND datos IS NOT NULL
+        AND aportante_tipo = 'compareciente'
+        AND aportante_compareciente_id IS NOT NULL
+        AND aportante_cliente_id IS NULL
+        AND solidaria = 0)
+    )
+  );
+  CREATE INDEX IF NOT EXISTS idx_garantias_inst ON garantias(institucion_id);
+  CREATE INDEX IF NOT EXISTS idx_garantias_ap_cli ON garantias(aportante_cliente_id);
+  CREATE INDEX IF NOT EXISTS idx_garantias_ap_comp ON garantias(aportante_compareciente_id);
+
+  -- Pivote contrato↔compareciente con rol (per-contrato) y snapshot al firmar.
+  -- agregado_por_actor: quién lo agregó por primera vez al contrato. Para audit
+  -- granular usar audit_log con accion='COMPARECIENTE_AGREGADO/EDITADO/QUITADO/ROL_CAMBIADO'.
+  CREATE TABLE IF NOT EXISTS contrato_comparecientes (
+    contrato_id INTEGER NOT NULL REFERENCES contratos(id) ON DELETE CASCADE,
+    compareciente_id INTEGER NOT NULL REFERENCES comparecientes(id),
+    rol TEXT NOT NULL CHECK (rol IN ('fiador','tercero_garante')),
+    orden INTEGER NOT NULL DEFAULT 1,
+    agregado_por_actor TEXT NOT NULL CHECK (agregado_por_actor IN ('cliente','banco','bufete')),
+    agregado_por_user_id INTEGER REFERENCES users(id),
+    agregado_en TEXT NOT NULL DEFAULT (datetime('now')),
+    -- Snapshot inmutable al firmar (poblado por el freeze trigger en CP3):
+    snapshot_nombre TEXT,            -- ciphertext AES-GCM
+    snapshot_dpi TEXT,               -- ciphertext AES-GCM
+    snapshot_profesion TEXT,         -- ciphertext AES-GCM
+    snapshot_estado_civil TEXT,      -- ciphertext AES-GCM
+    snapshot_domicilio TEXT,         -- ciphertext AES-GCM
+    snapshot_rol TEXT,
+    congelado_en TEXT,
+    PRIMARY KEY (contrato_id, compareciente_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_cc_comp ON contrato_comparecientes(compareciente_id);
+
+  -- Pivote contrato↔garantía con snapshot al firmar.
+  -- snapshot_aportante_*_id apuntan referencialmente al aportante al momento
+  -- del freeze. La PII del aportante NO se duplica aquí: si es cliente, ya
+  -- está snapshotted en contratos.datos_cliente; si es compareciente, está
+  -- en contrato_comparecientes.snapshot_*.
+  CREATE TABLE IF NOT EXISTS contrato_garantias (
+    contrato_id INTEGER NOT NULL REFERENCES contratos(id) ON DELETE CASCADE,
+    garantia_id INTEGER NOT NULL REFERENCES garantias(id),
+    orden INTEGER NOT NULL DEFAULT 1,
+    snapshot_tipo TEXT,
+    snapshot_solidaria INTEGER,
+    snapshot_datos TEXT,             -- ciphertext AES-GCM
+    snapshot_aportante_tipo TEXT,
+    snapshot_aportante_cliente_id INTEGER,
+    snapshot_aportante_compareciente_id INTEGER,
+    congelado_en TEXT,
+    PRIMARY KEY (contrato_id, garantia_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_cg_garantia ON contrato_garantias(garantia_id);
 `);
 
 // Migraciones idempotentes para DBs que existían con schema previo.
@@ -364,7 +471,7 @@ if (!clientesCols.includes('tipo_persona')) {
   db.exec("ALTER TABLE clientes ADD COLUMN tipo_persona TEXT NOT NULL DEFAULT 'individual' CHECK (tipo_persona IN ('individual','juridica'))");
 }
 
-const fiadoresCols = db.prepare('PRAGMA table_info(fiadores)').all().map((c) => c.name);
-if (!fiadoresCols.includes('dpi_hash')) db.exec("ALTER TABLE fiadores ADD COLUMN dpi_hash TEXT");
+// Sprint garantías-desacopladas CP2: el ALTER de fiadores.dpi_hash se removió
+// junto con la tabla. La migración manual hace DROP TABLE fiadores.
 
 module.exports = db;

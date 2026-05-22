@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "seed": "node seed.js",
+    "migrate:garantias": "node scripts/migrate-garantias-desacopladas.js",
+    "test:garantias-schema": "node scripts/test-garantias-schema.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
