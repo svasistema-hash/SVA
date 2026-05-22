@@ -164,12 +164,41 @@ function buildCuentaClause(tipoPago, cuenta) {
 // y la resolución snapshot-vs-vivo según estado del contrato. Para CP2.5 solo
 // se usan en estado borrador (vivo).
 
+// Sprint CP3 — regla snapshot vs vivo:
+//   - contrato.estado IN ('completado','firmado') → lee snapshot_* (inmutable).
+//   - Cualquier otro estado → lee tablas vivas con JOIN.
+// Si congelado_en de alguna fila es NULL aunque el estado sea congelable
+// (caso patológico), fallback a vivo para esa fila.
+
+function contratoEstaCongelado(contrato_id) {
+  const r = db.prepare('SELECT estado FROM contratos WHERE id = ?').get(contrato_id);
+  return r && ['completado', 'firmado'].includes(r.estado);
+}
+
 function loadGarantiasDelContrato(contrato_id) {
   if (!contrato_id) return [];
+  const congelado = contratoEstaCongelado(contrato_id);
+  if (congelado) {
+    // Snapshot-first; si la fila no tiene snapshot (congelado_en NULL) recae a JOIN vivo.
+    return db.prepare(`
+      SELECT cg.garantia_id AS id,
+             COALESCE(cg.snapshot_tipo,                          g.tipo)                          AS tipo,
+             COALESCE(cg.snapshot_solidaria,                     g.solidaria)                     AS solidaria,
+             COALESCE(cg.snapshot_datos,                         g.datos)                         AS datos,
+             COALESCE(cg.snapshot_aportante_tipo,                g.aportante_tipo)                AS aportante_tipo,
+             COALESCE(cg.snapshot_aportante_cliente_id,          g.aportante_cliente_id)          AS aportante_cliente_id,
+             COALESCE(cg.snapshot_aportante_compareciente_id,    g.aportante_compareciente_id)    AS aportante_compareciente_id,
+             cg.orden, cg.congelado_en
+      FROM contrato_garantias cg
+      JOIN garantias g ON g.id = cg.garantia_id
+      WHERE cg.contrato_id = ?
+      ORDER BY cg.orden
+    `).all(contrato_id);
+  }
   return db.prepare(`
     SELECT g.id, g.tipo, g.solidaria, g.datos,
            g.aportante_tipo, g.aportante_cliente_id, g.aportante_compareciente_id,
-           cg.orden
+           cg.orden, NULL AS congelado_en
     FROM contrato_garantias cg
     JOIN garantias g ON g.id = cg.garantia_id
     WHERE cg.contrato_id = ?
@@ -179,9 +208,26 @@ function loadGarantiasDelContrato(contrato_id) {
 
 function loadComparecientesDelContrato(contrato_id) {
   if (!contrato_id) return [];
+  const congelado = contratoEstaCongelado(contrato_id);
+  if (congelado) {
+    return db.prepare(`
+      SELECT cc.compareciente_id AS id,
+             COALESCE(cc.snapshot_nombre,       c.nombre)       AS nombre,
+             COALESCE(cc.snapshot_dpi,          c.dpi)          AS dpi,
+             COALESCE(cc.snapshot_profesion,    c.profesion)    AS profesion,
+             COALESCE(cc.snapshot_estado_civil, c.estado_civil) AS estado_civil,
+             COALESCE(cc.snapshot_domicilio,    c.domicilio)    AS domicilio,
+             COALESCE(cc.snapshot_rol,          cc.rol)         AS rol,
+             cc.orden, cc.agregado_por_actor, cc.congelado_en
+      FROM contrato_comparecientes cc
+      JOIN comparecientes c ON c.id = cc.compareciente_id
+      WHERE cc.contrato_id = ?
+      ORDER BY cc.orden
+    `).all(contrato_id);
+  }
   return db.prepare(`
     SELECT c.id, c.nombre, c.dpi, c.profesion, c.estado_civil, c.domicilio,
-           cc.rol, cc.orden, cc.agregado_por_actor
+           cc.rol, cc.orden, cc.agregado_por_actor, NULL AS congelado_en
     FROM contrato_comparecientes cc
     JOIN comparecientes c ON c.id = cc.compareciente_id
     WHERE cc.contrato_id = ?
@@ -725,6 +771,15 @@ module.exports = {
   buildRepEscritura,
   interpolate,
   CLAUSULAS_BASE,
+  // Sprint garantías-desacopladas CP3 — utilidades expuestas para reuso
+  // por tests y endpoints.
+  loadGarantiasDelContrato,
+  loadComparecientesDelContrato,
+  descifrarGarantia,
+  descifrarCompareciente,
+  buildGarantiasLegalText,
+  buildComparecenciaText,
+  contratoEstaCongelado,
 };
 
 if (require.main === module) {

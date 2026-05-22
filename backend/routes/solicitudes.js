@@ -284,4 +284,291 @@ publicRouter.post('/solicitud/:token/confirmar', (req, res, next) => {
   }
 });
 
+// ──────────────────────────────────────────────────────────────
+// Sprint garantías-desacopladas CP3 — Endpoints públicos del portal
+// cliente (C6) para gestionar comparecientes y garantías propias.
+//
+// Cap estricto: máximo 1 compareciente y máximo 1 garantía aportada
+// por el cliente desde el portal público. Ambos opcionales.
+//
+// El cliente solo puede:
+//   - Listar/crear/editar/quitar comparecientes (siempre con
+//     agregado_por_actor='cliente').
+//   - Ver las garantías que el banco/bufete ingresó (read-only de
+//     todas las garantías del contrato).
+//   - Crear/editar/quitar 1 garantía propia con aportante_tipo='cliente'
+//     apuntando al cliente del contrato.
+// ──────────────────────────────────────────────────────────────
+
+const MAX_COMPS_CLIENTE = 1;
+const MAX_GARS_CLIENTE = 1;
+
+function publicSafeDecrypt(v) {
+  if (v === null || v === undefined || v === '') return null;
+  try { return decrypt(v); } catch { return null; }
+}
+
+function publicDescifrarCompareciente(row) {
+  if (!row) return null;
+  const { nombre_hash, dpi_hash, ...rest } = row;
+  return {
+    ...rest,
+    nombre: publicSafeDecrypt(row.nombre),
+    dpi: publicSafeDecrypt(row.dpi),
+    profesion: publicSafeDecrypt(row.profesion),
+    estado_civil: publicSafeDecrypt(row.estado_civil),
+    domicilio: publicSafeDecrypt(row.domicilio),
+  };
+}
+
+function publicDescifrarGarantia(row) {
+  if (!row) return null;
+  let datos = null;
+  if (row.datos) {
+    try { datos = JSON.parse(publicSafeDecrypt(row.datos)); } catch { datos = null; }
+  }
+  return { ...row, datos };
+}
+
+// Cuántos comparecientes/garantías agregó el cliente para este contrato.
+function countAgregadosPorCliente(contratoId) {
+  const comps = db.prepare(`
+    SELECT COUNT(*) AS n FROM contrato_comparecientes
+    WHERE contrato_id = ? AND agregado_por_actor = 'cliente'
+  `).get(contratoId).n;
+  // Las garantías no tienen "agregado_por_actor" propio; usamos como proxy
+  // las garantías cuyo aportante es el cliente Y vinculadas al contrato Y
+  // creadas por user NULL (heurística: el cliente público no tiene user_id).
+  // En la práctica, sumamos cuántas garantías-aportadas-por-cliente hay
+  // ligadas al contrato y la limitamos a 1 desde el portal.
+  const cliId = db.prepare('SELECT id FROM clientes WHERE institucion_id = (SELECT institucion_id FROM contratos WHERE id = ?) LIMIT 1').get(contratoId)?.id;
+  const gars = db.prepare(`
+    SELECT COUNT(*) AS n FROM contrato_garantias cg
+    JOIN garantias g ON g.id = cg.garantia_id
+    WHERE cg.contrato_id = ? AND g.aportante_tipo = 'cliente'
+  `).get(contratoId).n;
+  return { comps, gars };
+}
+
+// GET /api/public/contratos/:token/comparecientes
+publicRouter.get('/contratos/:token/comparecientes', (req, res) => {
+  const r = resolverToken(req.params.token);
+  if (r.status !== 'ok') return manejarErrorToken(res, r);
+  const rows = db.prepare(`
+    SELECT cc.contrato_id, cc.compareciente_id, cc.rol, cc.orden, cc.agregado_por_actor,
+           c.nombre, c.dpi, c.profesion, c.estado_civil, c.domicilio, c.institucion_id
+    FROM contrato_comparecientes cc
+    JOIN comparecientes c ON c.id = cc.compareciente_id
+    WHERE cc.contrato_id = ?
+    ORDER BY cc.orden
+  `).all(r.contrato.id);
+  res.json(rows.map(publicDescifrarCompareciente));
+});
+
+// POST /api/public/contratos/:token/comparecientes
+// Body: { nombre, dpi, profesion?, estado_civil?, domicilio?, rol }
+publicRouter.post('/contratos/:token/comparecientes', (req, res, next) => {
+  try {
+    const r = resolverToken(req.params.token);
+    if (r.status !== 'ok') return manejarErrorToken(res, r);
+
+    const { comps } = countAgregadosPorCliente(r.contrato.id);
+    if (comps >= MAX_COMPS_CLIENTE) {
+      return jsonError(res, 409, 'cap_excedido', `Máximo ${MAX_COMPS_CLIENTE} compareciente desde el portal`);
+    }
+
+    const { nombre, dpi, profesion, estado_civil, domicilio, rol } = req.body || {};
+    if (!nombre || !dpi) return jsonError(res, 400, 'campos_requeridos', 'nombre y dpi requeridos');
+    if (!['fiador', 'tercero_garante'].includes(rol)) {
+      return jsonError(res, 400, 'rol_invalido', "rol IN ('fiador','tercero_garante')");
+    }
+
+    const instId = r.contrato.institucion_id;
+    const dpiH = hashFor('dpi', dpi);
+
+    // Idempotente: si ya hay un compareciente con ese DPI en la institución, lo reuso.
+    let comp = db.prepare(
+      'SELECT id FROM comparecientes WHERE institucion_id = ? AND dpi_hash = ?'
+    ).get(instId, dpiH);
+    let compId;
+    if (comp) {
+      compId = comp.id;
+    } else {
+      const info = db.prepare(`
+        INSERT INTO comparecientes (
+          institucion_id, nombre, nombre_hash, dpi, dpi_hash,
+          profesion, estado_civil, domicilio, creado_por_user_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      `).run(
+        instId,
+        encrypt(nombre), hashFor('nombre', nombre),
+        encrypt(dpi), dpiH,
+        profesion ? encrypt(profesion) : null,
+        estado_civil ? encrypt(estado_civil) : null,
+        domicilio ? encrypt(domicilio) : null,
+      );
+      compId = info.lastInsertRowid;
+    }
+
+    // Vincular al contrato si no estaba.
+    const ya = db.prepare(
+      'SELECT 1 FROM contrato_comparecientes WHERE contrato_id = ? AND compareciente_id = ?'
+    ).get(r.contrato.id, compId);
+    if (ya) return jsonError(res, 409, 'ya_vinculado', 'Compareciente ya vinculado al contrato');
+
+    const orden = (db.prepare('SELECT COALESCE(MAX(orden), 0) AS m FROM contrato_comparecientes WHERE contrato_id = ?').get(r.contrato.id).m) + 1;
+    db.prepare(`
+      INSERT INTO contrato_comparecientes
+      (contrato_id, compareciente_id, rol, orden, agregado_por_actor, agregado_por_user_id)
+      VALUES (?, ?, ?, ?, 'cliente', NULL)
+    `).run(r.contrato.id, compId, rol, orden);
+
+    auditAnonimo('COMPARECIENTE_AGREGADO', 'contrato', r.contrato.id, {
+      compareciente_id: compId, rol, orden, actor: 'cliente', via: 'portal_publico',
+    }, {
+      institucion_id: instId,
+      ip: req.ip,
+      user_agent: req.get('user-agent'),
+    });
+
+    res.status(201).json({ contrato_id: r.contrato.id, compareciente_id: compId, rol, orden });
+  } catch (err) { next(err); }
+});
+
+// DELETE /api/public/contratos/:token/comparecientes/:compId
+publicRouter.delete('/contratos/:token/comparecientes/:compId', (req, res, next) => {
+  try {
+    const r = resolverToken(req.params.token);
+    if (r.status !== 'ok') return manejarErrorToken(res, r);
+    const compId = parseInt(req.params.compId, 10);
+
+    // Solo puede borrar si el vínculo lo agregó el cliente.
+    const link = db.prepare(
+      "SELECT * FROM contrato_comparecientes WHERE contrato_id = ? AND compareciente_id = ? AND agregado_por_actor = 'cliente'"
+    ).get(r.contrato.id, compId);
+    if (!link) return jsonError(res, 404, 'no_encontrado', 'Vínculo no encontrado o no fue agregado por el cliente');
+
+    // ¿Lo apunta una garantía como aportante?
+    const usada = db.prepare(`
+      SELECT g.id FROM contrato_garantias cg
+      JOIN garantias g ON g.id = cg.garantia_id
+      WHERE cg.contrato_id = ? AND g.aportante_tipo = 'compareciente' AND g.aportante_compareciente_id = ?
+      LIMIT 1
+    `).get(r.contrato.id, compId);
+    if (usada) return jsonError(res, 409, 'compareciente_en_uso', 'Está siendo usado como aportante en una garantía');
+
+    db.prepare(
+      'DELETE FROM contrato_comparecientes WHERE contrato_id = ? AND compareciente_id = ?'
+    ).run(r.contrato.id, compId);
+
+    auditAnonimo('COMPARECIENTE_QUITADO', 'contrato', r.contrato.id, {
+      compareciente_id: compId, via: 'portal_publico',
+    }, {
+      institucion_id: r.contrato.institucion_id,
+      ip: req.ip,
+      user_agent: req.get('user-agent'),
+    });
+
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+
+// GET /api/public/contratos/:token/garantias — read-only de TODAS las garantías del contrato.
+publicRouter.get('/contratos/:token/garantias', (req, res) => {
+  const r = resolverToken(req.params.token);
+  if (r.status !== 'ok') return manejarErrorToken(res, r);
+  const rows = db.prepare(`
+    SELECT g.* , cg.orden, cg.congelado_en
+    FROM contrato_garantias cg
+    JOIN garantias g ON g.id = cg.garantia_id
+    WHERE cg.contrato_id = ?
+    ORDER BY cg.orden
+  `).all(r.contrato.id);
+  res.json(rows.map(publicDescifrarGarantia));
+});
+
+// POST /api/public/contratos/:token/garantias  { tipo, datos } — solo aportante=cliente.
+publicRouter.post('/contratos/:token/garantias', (req, res, next) => {
+  try {
+    const r = resolverToken(req.params.token);
+    if (r.status !== 'ok') return manejarErrorToken(res, r);
+
+    const { gars } = countAgregadosPorCliente(r.contrato.id);
+    if (gars >= MAX_GARS_CLIENTE) {
+      return jsonError(res, 409, 'cap_excedido', `Máximo ${MAX_GARS_CLIENTE} garantía aportada por el cliente desde el portal`);
+    }
+
+    const { tipo, datos } = req.body || {};
+    if (!['hipotecaria', 'prendaria'].includes(tipo)) {
+      return jsonError(res, 400, 'tipo_invalido', "tipo IN ('hipotecaria','prendaria') desde portal");
+    }
+    if (!datos || typeof datos !== 'object') {
+      return jsonError(res, 400, 'datos_requeridos', 'datos (objeto) requerido');
+    }
+
+    // Aportante = cliente del contrato. Buscamos un cliente del contrato (por
+    // datos_cliente.dpi_hash). Si no hay match exacto, devolvemos error claro:
+    // el portal espera que el banco haya creado el cliente antes.
+    const datosCli = (() => {
+      try { return JSON.parse(decrypt(r.contrato.datos_cliente || '')); } catch { return null; }
+    })();
+    if (!datosCli?.dpi) return jsonError(res, 409, 'cliente_no_existe', 'No se puede asociar aportante: el contrato no tiene cliente identificado');
+    const cliente = db.prepare(
+      'SELECT id FROM clientes WHERE institucion_id = ? AND dpi_hash = ?'
+    ).get(r.contrato.institucion_id, hashFor('dpi', datosCli.dpi));
+    if (!cliente) return jsonError(res, 409, 'cliente_no_existe', 'Cliente del contrato no encontrado en catálogo');
+
+    const garInfo = db.prepare(`
+      INSERT INTO garantias (
+        institucion_id, tipo, solidaria, datos, aportante_tipo, aportante_cliente_id, creado_por_user_id
+      ) VALUES (?, ?, 0, ?, 'cliente', ?, NULL)
+    `).run(r.contrato.institucion_id, tipo, encrypt(JSON.stringify(datos)), cliente.id);
+    const garId = garInfo.lastInsertRowid;
+
+    const orden = (db.prepare('SELECT COALESCE(MAX(orden), 0) AS m FROM contrato_garantias WHERE contrato_id = ?').get(r.contrato.id).m) + 1;
+    db.prepare('INSERT INTO contrato_garantias (contrato_id, garantia_id, orden) VALUES (?, ?, ?)')
+      .run(r.contrato.id, garId, orden);
+
+    auditAnonimo('GARANTIA_AGREGADA', 'contrato', r.contrato.id, {
+      garantia_id: garId, tipo, orden, actor: 'cliente', via: 'portal_publico',
+    }, {
+      institucion_id: r.contrato.institucion_id,
+      ip: req.ip,
+      user_agent: req.get('user-agent'),
+    });
+
+    res.status(201).json({ contrato_id: r.contrato.id, garantia_id: garId, tipo, orden });
+  } catch (err) { next(err); }
+});
+
+// DELETE /api/public/contratos/:token/garantias/:garantiaId — solo si la creó el cliente.
+publicRouter.delete('/contratos/:token/garantias/:garantiaId', (req, res, next) => {
+  try {
+    const r = resolverToken(req.params.token);
+    if (r.status !== 'ok') return manejarErrorToken(res, r);
+    const garantiaId = parseInt(req.params.garantiaId, 10);
+    const gar = db.prepare('SELECT * FROM garantias WHERE id = ?').get(garantiaId);
+    if (!gar) return jsonError(res, 404, 'no_encontrado', 'Garantía no encontrada');
+    // Heurística: solo el cliente puede borrar garantías que creó el cliente (creado_por_user_id NULL + aportante cliente).
+    if (gar.creado_por_user_id !== null || gar.aportante_tipo !== 'cliente') {
+      return jsonError(res, 403, 'no_autorizado', 'Esta garantía no fue agregada por el cliente; solicítele al banco que la modifique');
+    }
+    const tx = db.transaction(() => {
+      db.prepare('DELETE FROM contrato_garantias WHERE contrato_id = ? AND garantia_id = ?').run(r.contrato.id, garantiaId);
+      db.prepare('DELETE FROM garantias WHERE id = ?').run(garantiaId);
+    });
+    tx();
+
+    auditAnonimo('GARANTIA_QUITADA', 'contrato', r.contrato.id, {
+      garantia_id: garantiaId, via: 'portal_publico',
+    }, {
+      institucion_id: r.contrato.institucion_id,
+      ip: req.ip,
+      user_agent: req.get('user-agent'),
+    });
+
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+
 module.exports = { authRouter, publicRouter };

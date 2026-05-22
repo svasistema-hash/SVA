@@ -64,6 +64,9 @@ const contratosRoutes = require('./routes/contratos');
 const clientesRoutes = require('./routes/clientes');
 const modelosRoutes = require('./routes/modelos');
 const clausulasRoutes = require('./routes/clausulas');
+// Sprint garantías-desacopladas CP3
+const { router: comparecientesRoutes, linkRouter: comparecientesLinkRoutes } = require('./routes/comparecientes');
+const { router: garantiasRoutes, linkRouter: garantiasLinkRoutes } = require('./routes/garantias');
 const clientesJuridicosRoutes = require('./routes/clientesJuridicos');
 const { authRouter: solicitudesAuthRouter, publicRouter: solicitudesPublicRouter } = require('./routes/solicitudes');
 const pendientesRoutes = require('./routes/pendientes');
@@ -169,6 +172,14 @@ app.use('/api/clientes/juridicos', authenticate, clientesJuridicosRoutes);
 app.use('/api/clientes', authenticate, clientesRoutes);
 app.use('/api/modelos', authenticate, modelosRoutes);
 app.use('/api/clausulas', authenticate, clausulasRoutes);
+// Sprint garantías-desacopladas CP3 — Endpoints CRUD del modelo nuevo.
+// Catálogo: /api/comparecientes y /api/garantias (CRUD por institución).
+// Vinculación con contratos: /api/contratos/:id/comparecientes y
+//   /api/contratos/:id/garantias (sub-router con mergeParams).
+app.use('/api/comparecientes', authenticate, comparecientesRoutes);
+app.use('/api/garantias', authenticate, garantiasRoutes);
+app.use('/api/contratos/:contratoId/comparecientes', authenticate, comparecientesLinkRoutes);
+app.use('/api/contratos/:contratoId/garantias', authenticate, garantiasLinkRoutes);
 
 app.use((req, res) => res.status(404).json({ error: 'Ruta no encontrada', code: 404 }));
 app.use(errorHandler);
