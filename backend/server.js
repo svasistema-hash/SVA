@@ -94,6 +94,15 @@ const ocr = require('./utils/ocr');
 
 const app = express();
 
+// Railway (y la mayoría de PaaS) ponen un proxy edge delante del container que
+// inyecta el header X-Forwarded-For con la IP real del cliente. Sin
+// 'trust proxy', Express ignora ese header y express-rate-limit usa la IP del
+// proxy → todos los requests parecen venir de la misma IP → rate limit se
+// dispara muy pronto. Con valor 1, Express confía en el último hop (Railway
+// edge) y no en hops arbitrarios — más seguro que `true` que confía cualquier
+// X-Forwarded-For inyectado.
+app.set('trust proxy', 1);
+
 app.use(helmet());
 app.use(cors({ origin: CORS_ORIGIN, credentials: true }));
 app.use(express.json({ limit: '5mb' }));
