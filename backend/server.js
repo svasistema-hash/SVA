@@ -33,6 +33,24 @@ try {
   console.warn('[migrate-f7] No se pudo aplicar:', e.message);
 }
 
+// Sprint garantías-desacopladas — one-shot seed guard.
+// Seteá SEED_GARANTIAS_NOW=true en Railway una vez (después de correr la
+// migración manual). El próximo boot corre el seed CP2.5 una sola vez.
+// IMPORTANTE: hay que DESSETEAR la env var después de ver el OK en logs.
+// Si queda seteado, el seed se ejecuta en cada restart — es idempotente
+// (limpia su propio set CT-CP25-* antes de insertar), así que no rompe
+// nada, pero deja basura de logs.
+try {
+  if (process.env.SEED_GARANTIAS_NOW === 'true') {
+    console.log('[boot] SEED_GARANTIAS_NOW=true detectado, corriendo seed CP2.5...');
+    const seedResult = require('./scripts/seed-garantias-cp25').run(db);
+    console.log('[boot] seed OK:', JSON.stringify(seedResult));
+    console.log('[boot] ⚠️  RECORDATORIO: desseteá SEED_GARANTIAS_NOW en Railway para evitar re-runs.');
+  }
+} catch (e) {
+  console.error('[boot] seed garantías FALLÓ (server arranca igual):', e.stack || e.message);
+}
+
 // Patches idempotentes: corren SIEMPRE al boot (no solo cuando la BD está
 // vacía). Necesario porque el seed sólo aplica con userCount=0, y si la BD
 // ya tiene datos pero le falta una columna seedeada, no se actualiza.
