@@ -440,6 +440,246 @@ db.exec(`
     PRIMARY KEY (contrato_id, garantia_id)
   );
   CREATE INDEX IF NOT EXISTS idx_cg_garantia ON contrato_garantias(garantia_id);
+
+  -- ─────────────────────────────────────────────────────────────────
+  -- Sprint LexDocs Legal Fase 2 (S.A. express) — CP2.
+  -- Producto separado de Fase 1: vive en subdominio legal.lexdocs.gt,
+  -- multi-tenancy jerárquica (master + sub-tenants), constitución de
+  -- Sociedades Anónimas con flujo cliente → revisión abogado → minuta
+  -- lista para protocolización notarial → tramitación manual en RM.
+  -- Doc: docs/sprint-legal-fase2-sa-diseno.md (CP1).
+  -- 7 tablas nuevas. PII de personas físicas cifrada AES-GCM con HMAC.
+  -- ─────────────────────────────────────────────────────────────────
+
+  -- Catálogo de firmas: bufetes, notarías, contadores, corredores legales.
+  -- parent_id NULL  = firma master (LexDocs Legal, id=1).
+  -- parent_id NOT NULL = sub-tenant (firma tercera).
+  CREATE TABLE IF NOT EXISTS firmas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug TEXT NOT NULL UNIQUE,
+    nombre TEXT NOT NULL,
+    tipo TEXT NOT NULL CHECK (tipo IN ('bufete','notaria','contador','corredor_legal')),
+    parent_id INTEGER REFERENCES firmas(id) ON DELETE RESTRICT,
+    -- Datos de contacto (NIT y dirección de bufete son info pública, no cifrados)
+    nit TEXT,
+    nit_hash TEXT,
+    direccion TEXT,
+    telefono TEXT,
+    email TEXT,
+    -- Correlativo propio por firma: prefijo + contador, ej. SA-LXL-2026-0001
+    correlativo_prefijo TEXT NOT NULL,
+    correlativo_actual INTEGER NOT NULL DEFAULT 0,
+    -- Lifecycle
+    activo INTEGER NOT NULL DEFAULT 1,
+    suspendido_motivo TEXT,
+    suspendido_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    CHECK (parent_id IS NULL OR parent_id != id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_firmas_parent ON firmas(parent_id);
+  CREATE INDEX IF NOT EXISTS idx_firmas_slug ON firmas(slug);
+
+  CREATE TRIGGER IF NOT EXISTS trg_firmas_updated
+  AFTER UPDATE ON firmas
+  FOR EACH ROW
+  BEGIN
+    UPDATE firmas SET updated_at = datetime('now') WHERE id = OLD.id;
+  END;
+
+  -- Entidad principal Fase 2 (análoga a contratos en Fase 1).
+  -- Solo Sociedad Anónima en sprint 1. tipo_sociedad en CHECK para soportar
+  -- S.R.L./E.M.I./Cooperativa en sprints siguientes sin breaking change.
+  CREATE TABLE IF NOT EXISTS sociedades (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    firma_id INTEGER NOT NULL REFERENCES firmas(id) ON DELETE RESTRICT,
+    correlativo TEXT NOT NULL,
+    tipo_sociedad TEXT NOT NULL CHECK (tipo_sociedad IN ('sa')),
+    estado TEXT NOT NULL DEFAULT 'en_curso' CHECK (estado IN (
+      'en_curso',
+      'revision_abogado',
+      'correcciones_cliente',
+      'listo_para_RM',
+      'enviado_RM',
+      'inscrito_RM',
+      'anulada'
+    )),
+    -- Datos básicos de la S.A. (públicos en RM una vez constituida)
+    denominacion TEXT NOT NULL,
+    objeto_social TEXT NOT NULL,
+    plazo_anios INTEGER,                         -- NULL = indefinido (99 por convención)
+    -- Capital y acciones (plaintext para CHECK numérico estricto)
+    moneda TEXT NOT NULL DEFAULT 'GTQ' CHECK (moneda IN ('GTQ','USD')),
+    capital_social NUMERIC NOT NULL,
+    valor_nominal_accion NUMERIC NOT NULL,
+    total_acciones INTEGER NOT NULL,
+    -- Trazabilidad
+    created_by_user_id INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    -- Estados intermedios
+    aprobado_por_user_id INTEGER REFERENCES users(id),
+    aprobado_at TEXT,
+    listo_para_rm_at TEXT,
+    -- RM (manual en sprint 1, automatizable cuando llegue la API en Fase 3)
+    enviado_rm_por INTEGER REFERENCES users(id),
+    enviado_rm_at TEXT,
+    rm_folio TEXT,
+    rm_libro TEXT,
+    rm_fecha_inscripcion TEXT,
+    inscrito_rm_por INTEGER REFERENCES users(id),
+    -- Anulación
+    anulado_motivo TEXT,
+    anulado_por INTEGER REFERENCES users(id),
+    anulado_at TEXT,
+    -- Snapshot inmutable: poblado al freeze (estado → listo_para_RM)
+    snapshot_datos TEXT,
+    snapshot_at TEXT,
+    -- Borrador del portal (JSON serializado para resume del cliente)
+    datos_borrador TEXT,
+    -- Constraints a nivel de tabla DESPUÉS de todas las columnas (orden SQL).
+    -- Cód. Comercio GT art. 86: capital mínimo Q5,000.
+    UNIQUE (firma_id, correlativo),
+    CHECK (capital_social >= 5000.00),
+    CHECK (total_acciones > 0),
+    CHECK (valor_nominal_accion > 0),
+    CHECK (capital_social = ROUND(total_acciones * valor_nominal_accion, 2))
+  );
+  CREATE INDEX IF NOT EXISTS idx_sociedades_firma ON sociedades(firma_id);
+  CREATE INDEX IF NOT EXISTS idx_sociedades_estado ON sociedades(firma_id, estado);
+  CREATE INDEX IF NOT EXISTS idx_sociedades_created ON sociedades(created_at);
+
+  CREATE TRIGGER IF NOT EXISTS trg_sociedades_updated
+  AFTER UPDATE ON sociedades
+  FOR EACH ROW
+  BEGIN
+    UPDATE sociedades SET updated_at = datetime('now') WHERE id = OLD.id;
+  END;
+
+  -- Accionistas de la S.A. (PII cifrada).
+  -- tipo_persona='individual' → DPI + fecha_nac + estado_civil etc.
+  -- tipo_persona='juridico'   → NIT (persona moral); demás columnas NULL.
+  CREATE TABLE IF NOT EXISTS accionistas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sociedad_id INTEGER NOT NULL REFERENCES sociedades(id) ON DELETE CASCADE,
+    orden INTEGER NOT NULL DEFAULT 1,
+    tipo_persona TEXT NOT NULL CHECK (tipo_persona IN ('individual','juridico')),
+    -- PII cifrada AES-GCM
+    nombre TEXT NOT NULL,
+    nombre_hash TEXT NOT NULL,
+    dpi_o_nit TEXT NOT NULL,                     -- DPI (individuos) o NIT (jurídicos)
+    dpi_o_nit_hash TEXT NOT NULL,
+    profesion TEXT,                              -- solo individuos
+    estado_civil TEXT,
+    fecha_nac TEXT,                              -- plaintext YYYY-MM-DD
+    genero TEXT CHECK (genero IS NULL OR genero IN ('M','F')),
+    nacionalidad TEXT,
+    domicilio TEXT,
+    -- Participación accionaria (plaintext)
+    acciones_cantidad INTEGER NOT NULL,
+    porcentaje NUMERIC NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (sociedad_id, dpi_o_nit_hash),
+    CHECK (acciones_cantidad > 0 AND porcentaje > 0 AND porcentaje <= 100)
+  );
+  CREATE INDEX IF NOT EXISTS idx_accionistas_sociedad ON accionistas(sociedad_id);
+  CREATE INDEX IF NOT EXISTS idx_accionistas_dpi_hash ON accionistas(dpi_o_nit_hash);
+
+  CREATE TRIGGER IF NOT EXISTS trg_accionistas_updated
+  AFTER UPDATE ON accionistas
+  FOR EACH ROW
+  BEGIN
+    UPDATE accionistas SET updated_at = datetime('now') WHERE id = OLD.id;
+  END;
+
+  -- Representantes legales de la S.A. (PII cifrada).
+  CREATE TABLE IF NOT EXISTS representantes_sa (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sociedad_id INTEGER NOT NULL REFERENCES sociedades(id) ON DELETE CASCADE,
+    orden INTEGER NOT NULL DEFAULT 1,
+    nombre TEXT NOT NULL,
+    nombre_hash TEXT NOT NULL,
+    dpi TEXT NOT NULL,
+    dpi_hash TEXT NOT NULL,
+    profesion TEXT,
+    estado_civil TEXT,
+    fecha_nac TEXT,
+    genero TEXT CHECK (genero IS NULL OR genero IN ('M','F')),
+    nacionalidad TEXT DEFAULT 'guatemalteca',
+    domicilio TEXT,
+    cargo TEXT NOT NULL CHECK (cargo IN (
+      'Administrador Único','Presidente','Vicepresidente','Secretario',
+      'Tesorero','Vocal','Gerente General','Apoderado'
+    )),
+    vigencia_inicio TEXT NOT NULL,
+    vigencia_vencimiento TEXT,
+    facultades TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (sociedad_id, dpi_hash, cargo)
+  );
+  CREATE INDEX IF NOT EXISTS idx_representantes_sa_sociedad ON representantes_sa(sociedad_id);
+
+  CREATE TRIGGER IF NOT EXISTS trg_representantes_sa_updated
+  AFTER UPDATE ON representantes_sa
+  FOR EACH ROW
+  BEGIN
+    UPDATE representantes_sa SET updated_at = datetime('now') WHERE id = OLD.id;
+  END;
+
+  -- Direcciones de la S.A. (plaintext — son info pública en RM una vez constituida).
+  CREATE TABLE IF NOT EXISTS direcciones_sa (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sociedad_id INTEGER NOT NULL REFERENCES sociedades(id) ON DELETE CASCADE,
+    tipo TEXT NOT NULL CHECK (tipo IN ('fiscal','comercial','notificaciones')),
+    direccion TEXT NOT NULL,
+    municipio TEXT NOT NULL,
+    departamento TEXT NOT NULL,
+    pais TEXT NOT NULL DEFAULT 'Guatemala',
+    codigo_postal TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (sociedad_id, tipo)
+  );
+  CREATE INDEX IF NOT EXISTS idx_direcciones_sa_sociedad ON direcciones_sa(sociedad_id);
+
+  CREATE TRIGGER IF NOT EXISTS trg_direcciones_sa_updated
+  AFTER UPDATE ON direcciones_sa
+  FOR EACH ROW
+  BEGIN
+    UPDATE direcciones_sa SET updated_at = datetime('now') WHERE id = OLD.id;
+  END;
+
+  -- Tokens públicos para el portal cliente (7 días).
+  -- iteracion incrementa cuando abogado solicita correcciones.
+  CREATE TABLE IF NOT EXISTS sociedades_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sociedad_id INTEGER NOT NULL REFERENCES sociedades(id) ON DELETE CASCADE,
+    token TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    usado INTEGER NOT NULL DEFAULT 0,
+    iteracion INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    created_by INTEGER REFERENCES users(id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_sociedades_tokens_token ON sociedades_tokens(token);
+  CREATE INDEX IF NOT EXISTS idx_sociedades_tokens_sociedad ON sociedades_tokens(sociedad_id, usado);
+
+  -- Correcciones solicitadas por abogado al cliente.
+  -- campos_a_corregir: JSON array de field paths, ej. ["denominacion","accionistas[1].porcentaje"]
+  CREATE TABLE IF NOT EXISTS correcciones_sa (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sociedad_id INTEGER NOT NULL REFERENCES sociedades(id) ON DELETE CASCADE,
+    iteracion INTEGER NOT NULL,
+    campos_a_corregir TEXT NOT NULL,
+    comentario TEXT NOT NULL,
+    solicitado_por_user_id INTEGER REFERENCES users(id),
+    solicitado_at TEXT NOT NULL DEFAULT (datetime('now')),
+    resuelto_at TEXT,
+    status TEXT NOT NULL DEFAULT 'pendiente' CHECK (status IN ('pendiente','resuelto'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_correcciones_sa_sociedad ON correcciones_sa(sociedad_id, status);
 `);
 
 // Migraciones idempotentes para DBs que existían con schema previo.
@@ -502,5 +742,34 @@ if (!repCols.includes('profesion'))    db.exec("ALTER TABLE representantes ADD C
 const compCols = db.prepare('PRAGMA table_info(comparecientes)').all().map((c) => c.name);
 if (!compCols.includes('fecha_nac')) db.exec("ALTER TABLE comparecientes ADD COLUMN fecha_nac TEXT");
 if (!compCols.includes('genero'))    db.exec("ALTER TABLE comparecientes ADD COLUMN genero TEXT");
+
+// Sprint LexDocs Legal Fase 2 CP2 — multi-tenancy jerárquica.
+// users.firma_id es nullable: un user pertenece a una institución (Fase 1)
+// o a una firma (Fase 2), exclusivamente. La regla "exclusivo" se enforce
+// a nivel de app porque SQLite no soporta CHECK cross-column con UPDATE.
+const usersCols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
+if (!usersCols.includes('firma_id')) {
+  db.exec("ALTER TABLE users ADD COLUMN firma_id INTEGER REFERENCES firmas(id)");
+}
+
+// Sprint Fase 2 CP2 — audit_log polimórfico.
+// tenant_tipo IN ('institucion','firma') + tenant_id apuntan a la tabla
+// correspondiente. institucion_id se conserva para compat con rows viejos
+// pero los nuevos rows deben llenar tenant_tipo + tenant_id.
+const auditCols = db.prepare('PRAGMA table_info(audit_log)').all().map((c) => c.name);
+if (!auditCols.includes('tenant_tipo')) {
+  db.exec("ALTER TABLE audit_log ADD COLUMN tenant_tipo TEXT");
+}
+if (!auditCols.includes('tenant_id')) {
+  db.exec("ALTER TABLE audit_log ADD COLUMN tenant_id INTEGER");
+}
+// Backfill idempotente: rows viejos con institucion_id IS NOT NULL.
+// No corre nada si los rows ya tienen tenant_tipo+tenant_id.
+db.exec(`
+  UPDATE audit_log
+  SET tenant_tipo = 'institucion', tenant_id = institucion_id
+  WHERE institucion_id IS NOT NULL
+    AND (tenant_tipo IS NULL OR tenant_id IS NULL)
+`);
 
 module.exports = db;

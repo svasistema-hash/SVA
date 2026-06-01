@@ -11,6 +11,8 @@
     "test:garantias-schema": "node scripts/test-garantias-schema.js",
     "test:cp3": "node scripts/test-cp3-endpoints.js",
     "test:cp5": "node scripts/test-cp5-casos-modelo.js",
+    "migrate:fase2-sa": "node scripts/migrate-fase2-sa.js",
+    "test:fase2-sa-schema": "node scripts/test-fase2-sa-schema.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

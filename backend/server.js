@@ -51,6 +51,24 @@ try {
   console.error('[boot] seed garantías FALLÓ (server arranca igual):', e.stack || e.message);
 }
 
+// Sprint LexDocs Legal Fase 2 CP2 — one-shot migration guard.
+// Seteá MIGRATE_FASE2_SA_NOW=true en Railway una vez. El próximo boot corre
+// la migración de Fase 2 (verifica tablas nuevas, hace backfill audit_log
+// polimórfico, inserta firma master 'lexdocs-legal'). Idempotente: ejecutar
+// múltiples veces es seguro (todas las operaciones son CREATE IF NOT EXISTS,
+// UPDATE WHERE NULL, INSERT WHERE NOT EXISTS).
+// Después de ver el OK, DESSETEAR la env var.
+try {
+  if (process.env.MIGRATE_FASE2_SA_NOW === 'true') {
+    console.log('[boot] MIGRATE_FASE2_SA_NOW=true detectado, corriendo migración Fase 2 SA...');
+    const migrResult = require('./scripts/migrate-fase2-sa').run(db);
+    console.log('[boot] migración Fase 2 OK:', JSON.stringify(migrResult));
+    console.log('[boot] ⚠️  RECORDATORIO: desseteá MIGRATE_FASE2_SA_NOW en Railway para evitar re-runs.');
+  }
+} catch (e) {
+  console.error('[boot] migración Fase 2 FALLÓ (server arranca igual):', e.stack || e.message);
+}
+
 // Patches idempotentes: corren SIEMPRE al boot (no solo cuando la BD está
 // vacía). Necesario porque el seed sólo aplica con userCount=0, y si la BD
 // ya tiene datos pero le falta una columna seedeada, no se actualiza.
