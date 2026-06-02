@@ -103,6 +103,10 @@ const clausulasRoutes = require('./routes/clausulas');
 // Sprint garantías-desacopladas CP3
 const { router: comparecientesRoutes, linkRouter: comparecientesLinkRoutes } = require('./routes/comparecientes');
 const { router: garantiasRoutes, linkRouter: garantiasLinkRoutes } = require('./routes/garantias');
+// Sprint LexDocs Legal Fase 2 CP3
+const firmasRoutes = require('./routes/firmas');
+const { router: sociedadesRoutes, publicRouter: sociedadesPublicRouter } = require('./routes/sociedades');
+const masterRoutes = require('./routes/master');
 const clientesJuridicosRoutes = require('./routes/clientesJuridicos');
 const { authRouter: solicitudesAuthRouter, publicRouter: solicitudesPublicRouter } = require('./routes/solicitudes');
 const pendientesRoutes = require('./routes/pendientes');
@@ -225,6 +229,17 @@ app.use('/api/comparecientes', authenticate, comparecientesRoutes);
 app.use('/api/garantias', authenticate, garantiasRoutes);
 app.use('/api/contratos/:contratoId/comparecientes', authenticate, comparecientesLinkRoutes);
 app.use('/api/contratos/:contratoId/garantias', authenticate, garantiasLinkRoutes);
+
+// Sprint LexDocs Legal Fase 2 CP3 — Endpoints de Sociedad Anónima express.
+// - /api/firmas: CRUD de firmas/sub-tenants (master + sub-tenant según permisos).
+// - /api/sociedades: CRUD principal de S.A. + sub-routers anidados
+//   (accionistas, representantes, direcciones) + transiciones de estado.
+// - /api/master: bandeja cross-tenant + métricas + override compliance.
+// - /api/public/sociedades: portal cliente sin login con token 7 días.
+app.use('/api/firmas', authenticate, firmasRoutes);
+app.use('/api/sociedades', authenticate, sociedadesRoutes);
+app.use('/api/master', authenticate, masterRoutes);
+app.use('/api/public/sociedades', sociedadesPublicRouter);
 
 app.use((req, res) => res.status(404).json({ error: 'Ruta no encontrada', code: 404 }));
 app.use(errorHandler);

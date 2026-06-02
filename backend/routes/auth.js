@@ -30,6 +30,10 @@ router.post('/login', loginLimiter, (req, res, next) => {
       email: user.email,
       role: user.role,
       institucion_id: user.institucion_id,
+      // Sprint Fase 2 CP3 — firma_id en JWT para que el middleware de scope
+      // pueda filtrar consultas a /api/firmas, /api/sociedades, /api/master.
+      // Exclusivo con institucion_id (uno de los dos debe ser NULL).
+      firma_id: user.firma_id || null,
     };
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '8h' });
     res.json({
@@ -40,6 +44,7 @@ router.post('/login', loginLimiter, (req, res, next) => {
         nombre: user.nombre,
         role: user.role,
         institucion_id: user.institucion_id,
+        firma_id: user.firma_id || null,
       },
     });
   } catch (err) {
