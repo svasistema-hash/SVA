@@ -14,7 +14,14 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  if (token) return <Navigate to="/" replace />;
+  // Sprint LexDocs Legal Fase 2 CP4 — destino post-login depende del usuario:
+  //   - Si tiene firma_id (sub-tenant o master legal) → /legal.
+  //   - Si tiene institucion_id (banco Fase 1) → /.
+  //   - Caso ambiguo (admin global Fase 1 sin firma) → /.
+  const user = useStore((s) => s.user);
+  const destinoPorUsuario = (u) => (u?.firma_id ? '/legal' : '/');
+
+  if (token) return <Navigate to={destinoPorUsuario(user)} replace />;
 
   const onSubmit = async (e) => {
     e.preventDefault();
@@ -23,7 +30,7 @@ export default function Login() {
     try {
       const { token, user } = await login(email, password);
       setAuth(user, token);
-      const to = loc.state?.from || '/';
+      const to = loc.state?.from || destinoPorUsuario(user);
       nav(to, { replace: true });
     } catch (err) {
       setError(err.response?.data?.error || err.message || 'Error al iniciar sesión');
