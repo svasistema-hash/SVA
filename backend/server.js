@@ -69,6 +69,32 @@ try {
   console.error('[boot] migración Fase 2 FALLÓ (server arranca igual):', e.stack || e.message);
 }
 
+// Sprint LexDocs Legal Fase 2 — one-shot bootstrap del master tenant.
+// Seteá ASIGNAR_MASTER_LEGAL=<email-del-user> en Railway una vez. El próximo
+// boot busca ese user por email y le asigna firma_id=1 (la firma master).
+// El user mantiene sus permisos de Fase 1 (role='admin' + institucion_id);
+// solo se agrega firma_id para que pueda entrar al módulo Legal.
+// Idempotente: si el user ya tiene firma_id=1, no hace nada.
+// Después de ver el OK, DESSETEAR la env var.
+try {
+  const email = (process.env.ASIGNAR_MASTER_LEGAL || '').trim();
+  if (email) {
+    console.log(`[boot] ASIGNAR_MASTER_LEGAL=${email} detectado, asignando firma_id=1...`);
+    const u = db.prepare('SELECT id, firma_id FROM users WHERE email = ?').get(email);
+    if (!u) {
+      console.error(`[boot] usuario no encontrado: ${email} — verificá el email exacto en la DB.`);
+    } else if (u.firma_id === 1) {
+      console.log(`[boot] usuario ${email} ya tenía firma_id=1 — sin cambios.`);
+    } else {
+      db.prepare('UPDATE users SET firma_id = 1 WHERE id = ?').run(u.id);
+      console.log(`[boot] usuario ${email} (id=${u.id}) ahora es master legal (firma_id=1).`);
+      console.log('[boot] ⚠️  RECORDATORIO: desseteá ASIGNAR_MASTER_LEGAL en Railway. El user debe re-loguear para que el JWT tome el firma_id.');
+    }
+  }
+} catch (e) {
+  console.error('[boot] asignar master legal FALLÓ (server arranca igual):', e.stack || e.message);
+}
+
 // Patches idempotentes: corren SIEMPRE al boot (no solo cuando la BD está
 // vacía). Necesario porque el seed sólo aplica con userCount=0, y si la BD
 // ya tiene datos pero le falta una columna seedeada, no se actualiza.
