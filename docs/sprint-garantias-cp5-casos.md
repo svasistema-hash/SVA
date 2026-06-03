@@ -10,7 +10,7 @@ Cada caso muestra:
 2. Cláusula de garantías generada.
 3. Verificación de las 4 reglas de formato (R1-R4).
 
-Generado por `backend/scripts/test-cp5-casos-modelo.js` el 2026-06-02.
+Generado por `backend/scripts/test-cp5-casos-modelo.js` el 2026-06-03.
 
 ---
 

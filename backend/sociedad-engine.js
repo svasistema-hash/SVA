@@ -114,7 +114,7 @@ function frasePersonaCompareciente(persona) {
 function buildComparecencia({ fecha, ciudad, accionistas, notario }) {
   const fechaFrase = fecha ? legalFormat.renderFechaContrato(fecha, ciudad || 'Guatemala') : `En la ciudad de ${ciudad || 'Guatemala'}`;
   const notarioFrase = notario?.nombre
-    ? `ante mí, ${legalFormat.nombreEnMayusculas(notario.nombre)}${notario.colegiado ? `, Notario Colegiado N° ${notario.colegiado}` : ', Notario'}`
+    ? `ante mí, ${legalFormat.nombreEnMayusculas(notario.nombre)}${notario.colegiado ? `, Notario Colegiado número ${(() => { try { return legalFormat.formatoLegal(parseInt(notario.colegiado, 10), { tipo: 'entero' }); } catch { return notario.colegiado; } })()}` : ', Notario'}`
     : 'ante mí, el infrascrito notario';
   const acc = accionistas.length > 0
     ? 'comparecen los señores: ' + accionistas.map(frasePersonaCompareciente).join('; ')
@@ -228,7 +228,7 @@ function buildVars({ sociedad, accionistas, representantes, direcciones, notario
     fecha_constitucion_legal: fechaIso ? safe(() => legalFormat.fechaALetras(fechaIso)) : '[FECHA_CONSTITUCION]',
     ciudad_constitucion: ciudad,
     notario_compareciente: notario?.nombre
-      ? `el suscrito notario ${legalFormat.nombreEnMayusculas(notario.nombre)}${notario.colegiado ? `, Colegiado N° ${notario.colegiado}` : ''}`
+      ? `el suscrito notario ${legalFormat.nombreEnMayusculas(notario.nombre)}${notario.colegiado ? `, Colegiado número ${(() => { try { return legalFormat.formatoLegal(parseInt(notario.colegiado, 10), { tipo: 'entero' }); } catch { return notario.colegiado; } })()}` : ''}`
       : 'el suscrito notario',
     comparecencia: buildComparecencia({ fecha: fechaIso, ciudad, accionistas, notario }),
   };
