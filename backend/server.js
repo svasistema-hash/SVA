@@ -70,29 +70,67 @@ try {
 }
 
 // Sprint LexDocs Legal Fase 2 — one-shot bootstrap del master tenant.
-// Seteá ASIGNAR_MASTER_LEGAL=<email-del-user> en Railway una vez. El próximo
-// boot busca ese user por email y le asigna firma_id=1 (la firma master).
-// El user mantiene sus permisos de Fase 1 (role='admin' + institucion_id);
-// solo se agrega firma_id para que pueda entrar al módulo Legal.
-// Idempotente: si el user ya tiene firma_id=1, no hace nada.
-// Después de ver el OK, DESSETEAR la env var.
+//
+// Dos modos:
+//
+// 1) ASIGNAR_MASTER_LEGAL=<email>
+//    Busca user existente por email y le asigna firma_id=1.
+//    Idempotente. Útil si el user ya está en la DB.
+//
+// 2) CREAR_MASTER_LEGAL=<email>|<nombre>|<password>
+//    Crea user nuevo con role='admin', firma_id=1, password bcrypt'eado.
+//    Si el email ya existe, solo le asigna firma_id=1 (no toca el password).
+//    Útil cuando NO hay user con ese email todavía.
+//
+// IMPORTANTE para CREAR_*: el password aparece en clear text en Railway
+// mientras la env var esté seteada. Desseteala APENAS veas el log OK.
+// Vos podés cambiar el password después desde la UI (cuando exista la
+// pantalla de gestión de users — sprint corto futuro).
 try {
-  const email = (process.env.ASIGNAR_MASTER_LEGAL || '').trim();
-  if (email) {
-    console.log(`[boot] ASIGNAR_MASTER_LEGAL=${email} detectado, asignando firma_id=1...`);
-    const u = db.prepare('SELECT id, firma_id FROM users WHERE email = ?').get(email);
+  const asignarEmail = (process.env.ASIGNAR_MASTER_LEGAL || '').trim();
+  if (asignarEmail) {
+    console.log(`[boot] ASIGNAR_MASTER_LEGAL=${asignarEmail} detectado, asignando firma_id=1...`);
+    const u = db.prepare('SELECT id, firma_id FROM users WHERE email = ?').get(asignarEmail);
     if (!u) {
-      console.error(`[boot] usuario no encontrado: ${email} — verificá el email exacto en la DB.`);
+      console.error(`[boot] usuario no encontrado: ${asignarEmail}. Si querés crearlo, usá CREAR_MASTER_LEGAL en su lugar.`);
     } else if (u.firma_id === 1) {
-      console.log(`[boot] usuario ${email} ya tenía firma_id=1 — sin cambios.`);
+      console.log(`[boot] usuario ${asignarEmail} ya tenía firma_id=1 — sin cambios.`);
     } else {
       db.prepare('UPDATE users SET firma_id = 1 WHERE id = ?').run(u.id);
-      console.log(`[boot] usuario ${email} (id=${u.id}) ahora es master legal (firma_id=1).`);
+      console.log(`[boot] usuario ${asignarEmail} (id=${u.id}) ahora es master legal (firma_id=1).`);
       console.log('[boot] ⚠️  RECORDATORIO: desseteá ASIGNAR_MASTER_LEGAL en Railway. El user debe re-loguear para que el JWT tome el firma_id.');
     }
   }
+
+  const crearRaw = (process.env.CREAR_MASTER_LEGAL || '').trim();
+  if (crearRaw) {
+    const [email, nombre, password] = crearRaw.split('|').map((s) => (s || '').trim());
+    if (!email || !nombre || !password) {
+      console.error('[boot] CREAR_MASTER_LEGAL formato inválido. Esperado: email|nombre|password');
+    } else {
+      console.log(`[boot] CREAR_MASTER_LEGAL=${email}|${nombre}|*** detectado...`);
+      const bcrypt = require('bcryptjs');
+      const existing = db.prepare('SELECT id, firma_id FROM users WHERE email = ?').get(email);
+      if (existing) {
+        if (existing.firma_id === 1) {
+          console.log(`[boot] usuario ${email} ya existía y ya tenía firma_id=1 — sin cambios. (Password NO se actualiza desde esta variable.)`);
+        } else {
+          db.prepare('UPDATE users SET firma_id = 1 WHERE id = ?').run(existing.id);
+          console.log(`[boot] usuario ${email} (id=${existing.id}) ya existía — solo asignado firma_id=1. (Password NO se actualiza.)`);
+        }
+      } else {
+        const passHash = bcrypt.hashSync(password, 10);
+        const info = db.prepare(`
+          INSERT INTO users (email, password_hash, nombre, role, institucion_id, firma_id, activo)
+          VALUES (?, ?, ?, 'admin', NULL, 1, 1)
+        `).run(email, passHash, nombre);
+        console.log(`[boot] usuario master legal CREADO: ${email} (id=${info.lastInsertRowid}, role=admin, firma_id=1).`);
+      }
+      console.log('[boot] ⚠️  RECORDATORIO: desseteá CREAR_MASTER_LEGAL en Railway INMEDIATAMENTE (contiene password en clear).');
+    }
+  }
 } catch (e) {
-  console.error('[boot] asignar master legal FALLÓ (server arranca igual):', e.stack || e.message);
+  console.error('[boot] bootstrap master legal FALLÓ (server arranca igual):', e.stack || e.message);
 }
 
 // Patches idempotentes: corren SIEMPRE al boot (no solo cuando la BD está
