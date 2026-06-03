@@ -33,12 +33,46 @@ import SolicitudNueva from './pages/tenant/SolicitudNueva';
 import SolicitudesLista from './pages/tenant/SolicitudesLista';
 import SolicitudDetalle from './pages/tenant/SolicitudDetalle';
 
+// Sprint LexDocs Legal Fase 2 CP4 — Producto Legal (Sociedad Anónima express).
+// Vive bajo /legal/* (en producción debería ir a subdominio legal.lexdocs.gt).
+// Sub-routes:
+//   /legal              → dashboard sub-tenant
+//   /legal/sociedades   → bandeja
+//   /legal/sociedades/nueva → crear
+//   /legal/sociedades/:id → detalle
+//   /legal/master       → vista global (solo firma_id=1)
+//   /legal/portal/:token → portal público sin login del cliente final
+import LegalLayout from './components/LegalLayout';
+import LegalDashboard from './pages/legal/LegalDashboard';
+import SociedadesLista from './pages/legal/SociedadesLista';
+import SociedadNueva from './pages/legal/SociedadNueva';
+import SociedadDetalle from './pages/legal/SociedadDetalle';
+import SociedadPublica from './pages/legal/SociedadPublica';
+import { MasterPanelGlobal, MasterPanelFirmas, MasterMetricas } from './pages/legal/MasterPanel';
+import Facturacion from './pages/legal/Facturacion';
+
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/solicitud/:token" element={<SolicitudPublica />} />
+
+        {/* Sprint LexDocs Legal Fase 2 CP4 — Portal público del cliente final
+            para Sociedades Anónimas. Sin login, con token de 7 días. */}
+        <Route path="/legal/portal/:token" element={<SociedadPublica />} />
+
+        {/* Sprint LexDocs Legal Fase 2 CP4 — Módulo Legal autenticado. */}
+        <Route path="/legal" element={<ProtectedRoute><LegalLayout /></ProtectedRoute>}>
+          <Route index element={<LegalDashboard />} />
+          <Route path="sociedades" element={<SociedadesLista />} />
+          <Route path="sociedades/nueva" element={<SociedadNueva />} />
+          <Route path="sociedades/:id" element={<SociedadDetalle />} />
+          <Route path="master" element={<MasterPanelGlobal />} />
+          <Route path="master/firmas" element={<MasterPanelFirmas />} />
+          <Route path="master/metricas" element={<MasterMetricas />} />
+          <Route path="facturacion" element={<Facturacion />} />
+        </Route>
 
         <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
           <Route path="/" element={<Dashboard />} />
